@@ -1,0 +1,15 @@
+{
+  "name": "SystemKeywords",
+  "version": "1.0",
+  "_readme": "Used by SystemClassificationService to disambiguate piping systems that Revit's own System Classification reports as 'Other' (Revit has no built-in classification for Medical Gas or, in many templates, Storm drainage). Revit's RBS_SYSTEM_CLASSIFICATION_PARAM (Sanitary/Vent/Domestic/Hydronic/Fire) is always checked FIRST and takes priority over these keywords. Edit the lists below to match this project's naming convention, then use Settings to reload — no recompile needed. A copy of this file is also kept at %APPDATA%\\ClashResolveAI\\Rules\\SystemKeywords.json, which is the file actually read at runtime; this shipped copy is just the starting template.",
+  "medical_gas_keywords": [
+    "MED", "MEDGAS", "MEDICAL", "O2", "OXYGEN", "N2O", "NITROUS",
+    "NITROGEN", "N2", "CO2", "CARBON DIOXIDE", "MEDAIR", "MED AIR",
+    "MED-AIR", "SURGICAL AIR", "INST AIR", "VACUUM", "VAC", "AGSS",
+    "SCAVENGING", "WAGD", "BEACONMEDAES"
+  ],
+  "gravity_drainage_keywords": [
+    "DRAIN", "WASTE", "SOIL", "GRAVITY", "SEWER", "SANIT", "GREY",
+    "GRAY", "RWP", "RAINWAT", "STORM", "SVP", "SWV", "WP", "WC", "VENT"
+  ]
+}

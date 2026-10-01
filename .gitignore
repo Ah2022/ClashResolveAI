@@ -1,0 +1,42 @@
+# Generated builds and local recovery data
+**/bin/
+**/obj/
+/artifacts/
+/backups/
+/verification/
+/TestResults/
+.vs/
+*.user
+*.suo
+*.log
+
+# Model/customer data and release archives never belong in this repository
+*.rvt
+*.rfa
+*.rte
+*.rft
+*.dwg
+*.nwc
+*.nwd
+*.ifc
+*.zip
+*.7z
+*.dll
+*.exe
+*.pdb
+*.db
+*.db-*
+*.sqlite*
+*.bcf
+*.xlsx
+*.docx
+
+# Local settings and credentials
+.env
+.env.*
+Settings.json
+ClashResolveAI_Settings.json
+Inspector.json
+*.pfx
+*.p12
+*.key

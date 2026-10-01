@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>ClashResolve AI 9.4</Name>
+    <!-- This Assembly path is replaced by deploy-clean.ps1 with the absolute installation path. -->
+    <!-- At deploy time, this becomes: C:\Users\USERNAME\AppData\Roaming\Autodesk\Revit\Addins\2024\ClashResolveAI\ClashResolveAI.dll -->
+    <Assembly>.\ClashResolveAI\ClashResolveAI.dll</Assembly>
+    <AddInId>7F5F0D2D-4B2D-4F59-9A90-2F2D5B0C4E76</AddInId>
+    <FullClassName>ClashResolveAI.App</FullClassName>
+    <VendorId>MEP_TOOLS</VendorId>
+    <VendorDescription>ClashResolve AI 9.4 — Revit 2024 clash coordination</VendorDescription>
+  </AddIn>
+</RevitAddIns>
+

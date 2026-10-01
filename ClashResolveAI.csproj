@@ -1,0 +1,63 @@
+<!-- ClashResolveAI_Revit.csproj — Production build for Revit 2024 -->
+<!-- Use this csproj in Visual Studio on Windows with Revit 2024 installed -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>ClashResolveAI</AssemblyName>
+    <RootNamespace>ClashResolveAI</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Version>9.4.0</Version>
+    <PlatformTarget>x64</PlatformTarget>
+    <DefineConstants>$(DefineConstants);TRACE</DefineConstants>
+    <Company>BIM Coordination Engineering</Company>
+    <Description>ClashResolveAI 9.4 — Revit 2024 coordination</Description>
+  </PropertyGroup>
+
+  <!-- Revit 2024 API References — adjust path if Revit installed elsewhere -->
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.IO.Compression" />
+  </ItemGroup>
+
+  <!-- NuGet packages (restore via Visual Studio / dotnet restore) -->
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json"       Version="13.0.3" />
+    <PackageReference Include="System.Data.SQLite.Core"    Version="1.0.117" />
+    <PackageReference Include="ClosedXML"             Version="0.102.2" />
+  </ItemGroup>
+
+  <!-- JSON rule files -->
+  <ItemGroup>
+    <None Update="src\Rules\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="ClashResolveAI.addin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Icons / resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\*.png" />
+  </ItemGroup>
+
+</Project>
+

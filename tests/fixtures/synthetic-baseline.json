@@ -1,0 +1,44 @@
+{
+  "statistics": {},
+  "results": [
+    {
+      "ClashId": "synthetic-hard",
+      "ElementAId": 1,
+      "ElementBId": 2,
+      "LinkInstanceA": 0,
+      "LinkInstanceB": 0,
+      "TestType": 0,
+      "Severity": 0,
+      "GeometryEvidence": "Synthetic solid overlap",
+      "GapMM": 0,
+      "OverlapVolumeMM3": 8,
+      "RequiredClearanceMM": 0
+    },
+    {
+      "ClashId": "synthetic-clearance",
+      "ElementAId": 3,
+      "ElementBId": 4,
+      "LinkInstanceA": 0,
+      "LinkInstanceB": 0,
+      "TestType": 1,
+      "Severity": 1,
+      "GeometryEvidence": "Synthetic clearance",
+      "GapMM": 5,
+      "OverlapVolumeMM3": 0,
+      "RequiredClearanceMM": 10
+    },
+    {
+      "ClashId": "synthetic-unverified",
+      "ElementAId": 5,
+      "ElementBId": 6,
+      "LinkInstanceA": 0,
+      "LinkInstanceB": 0,
+      "TestType": 3,
+      "Severity": 2,
+      "GeometryEvidence": "Boolean intersection failed: synthetic failure",
+      "GapMM": 0,
+      "OverlapVolumeMM3": 0,
+      "RequiredClearanceMM": 0
+    }
+  ]
+}

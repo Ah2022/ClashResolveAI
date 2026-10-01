@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net48</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable><LangVersion>latest</LangVersion></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Compile Include="../../src/Inspection/InspectionScene.cs" Link="InspectionScene.cs" />
+    <Compile Include="../../src/Inspection/InspectionViewport.cs" Link="InspectionViewport.cs" />
+    <Compile Include="../../src/Inspection/ClashInspector.cs" Link="ClashInspector.cs" />
+    <Compile Include="../../src/Inspection/InspectorPreferences.cs" Link="InspectorPreferences.cs" />
+  </ItemGroup>
+</Project>
