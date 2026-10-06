@@ -16,6 +16,7 @@ namespace ClashResolveAI.Core
         private static ElementId? _phase5Pipe,_phase5Type;
         private static string _phase5Full="",_phase5Radar="";
         private static string Signature(IEnumerable<ClashResult> rows)=>string.Join("|",rows.OrderBy(c=>c.ClashId).Select(c=>c.ClashId+":"+c.Status+":"+c.Origin+":"+c.GeometryRevision+":"+c.LiveSessionId));
+        private static string Signature(IEnumerable<LiveClashDto> rows)=>string.Join("|",rows.OrderBy(c=>c.ClashId).Select(c=>c.ClashId+":"+c.Status+":"+c.Origin+":"+c.GeometryRevision+":"+c.LiveSessionId));
         private static void Phase5Step(UIApplication app)
         {
             var doc=_test!;var service=LiveMonitorService.Instance;var radar=RadarDataStore.Instance;var dashboard=ClashDashboard.Instance;
@@ -43,7 +44,7 @@ namespace ClashResolveAI.Core
             }
             if(_step==501){
                 Check(dashboard.Clashes.Any(c=>c.InvolvesHost(new HashSet<long>{_phase5Pipe!.Value}))&&radar.ActiveCount==0,"Full Scan populates only Dashboard");
-                _phase5Full=Signature(dashboard.Clashes);service.Start(app);service.ClearSession(doc);
+                _phase5Full=Signature(dashboard.Clashes);service.Start(app);service.ClearSession(doc);service.ExecuteQueued(app);
                 app.ActiveUIDocument.Selection.SetElementIds(new[]{_phase5Pipe!});service.CheckCurrentSelection();Next(502);return;
             }
             if(_step==502){
@@ -67,7 +68,7 @@ namespace ClashResolveAI.Core
             }
             if(_step==505){
                 var stats=service.LastStatistics!;
-                Check(!ReferenceEquals(stats,_previousLive)&&stats.Sources==2&&stats.IndexedElements==0&&!ScanCoordinator.Busy,"Pipe type edit locally checks its two instances without indexing or a global job");
+                Check(ReferenceEquals(stats,_previousLive)&&service.ScanStatus?.RequiresFullScan==true&&!ScanCoordinator.Busy,"Type edit requires Full Scan and preserves accumulated changes without starting a partial job");
                 Check(ScanCoordinator.InputsStale,"Local type checks leave model inputs stale until Full Scan");
                 DrainUi(ClashRadarPanel.Instance);
                 Check(Descendants<TextBlock>(ClashRadarPanel.Instance).Any(t=>t.Text=="Model inputs changed, run Full Scan to re-verify"&&t.IsVisible),"Persistent nonblocking model-input banner is visible");
@@ -89,7 +90,7 @@ namespace ClashResolveAI.Core
                     for(int i=0;i<501;i++)NativePipe(doc,new XYZ(600+i*2,0,3),new XYZ(600+i*2,1,3)).ChangeTypeId(_phase5Type);
                     tx.Commit();
                 }
-                service.Start(app);service.ClearSession(doc);_previousLive=service.LastStatistics;
+                service.Start(app);service.ClearSession(doc);service.ExecuteQueued(app);_previousLive=service.LastStatistics;
                 using(var tx=new Transaction(doc,"Phase5 over cap type edit")){tx.Start();doc.GetElement(_phase5Type!).Name="Phase5 over cap edited";tx.Commit();}
                 Next(508);return;
             }
@@ -102,7 +103,7 @@ namespace ClashResolveAI.Core
             }
             if(_step==509){
                 Check(!ScanCoordinator.FullResultsStale,"Full Scan certifies Dashboard after cap fixture changes");
-                _phase5Full=Signature(dashboard.Clashes);service.Start(app);service.ClearSession(doc);
+                _phase5Full=Signature(dashboard.Clashes);service.Start(app);service.ClearSession(doc);service.ExecuteQueued(app);
                 using(var tx=new Transaction(doc,"Phase5 draw after Full Scan")){tx.Start();NativePipe(doc,new XYZ(295,2,3),new XYZ(305,2,3));tx.Commit();}
                 Next(510);return;
             }
@@ -111,7 +112,7 @@ namespace ClashResolveAI.Core
                 Check(ScanCoordinator.FullResultsStale&&!ScanCoordinator.ResultsStale,"Live completion cannot certify the earlier Dashboard snapshot for export");
                 IEnumerable<int> Waiting(){while(true)yield return 0;}
                 ScanCoordinator.StartJob(doc,new ClashResolveAI.ClashEngine.ScanJob(Waiting(),new List<ClashResult>(),new ClashResolveAI.ClashEngine.ScanStatistics()),(_,__)=>{});
-                new ClashRefreshHandler {Action=ClashRefreshHandler.Request.Cancel}.Execute(app);
+                LiveMonitorService.Instance.RequestScan(LiveScanAction.Cancel);LiveMonitorService.Instance.ExecuteQueued(app);
                 Check(ScanCoordinator.Busy,"Radar Cancel does not cancel an independent Full Scan");ScanCoordinator.Cancel();
                 var liveRows=radar.GetActive().ToList();
                 File.WriteAllText(Path.Combine(_folder,"phase5-routing.json"),JsonConvert.SerializeObject(new {dashboard=dashboard.Clashes.Select(c=>new {c.ClashId,c.Origin,c.Status}),radar=liveRows.Select(c=>new {c.ClashId,c.Origin,c.LiveSessionId,c.Status}),cap=501},Formatting.Indented));

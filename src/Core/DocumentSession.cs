@@ -16,24 +16,32 @@ namespace ClashResolveAI.Core
             public ResultViewFilter Filter=new ResultViewFilter {Types=ResultViewFilter.Defaults(AppSettings.Load().FullScanMode)};
         }
         private static readonly Dictionary<string, State> States = new Dictionary<string, State>();
+        // Cache native document identity for its open lifetime: Save As must not
+        // change live operation keys, and managed wrappers may differ.
+        private static readonly List<(Document Document,string Key)> OpenDocuments = new List<(Document,string)>();
         private static string _currentKey = "";
         public static string CurrentKey=>_currentKey;
         public static Document? Current { get; private set; }
         public static string Key(Document doc)
         {
+            var known=OpenDocuments.FirstOrDefault(entry=>entry.Document.IsValidObject && entry.Document.Equals(doc));
+            if(known.Document!=null)return known.Key;
             // Revit can return different managed Document wrappers for the same native
             // model. Never use wrapper reference equality to partition document state.
             string identity = doc.ProjectInformation.UniqueId + "|" +
                 (string.IsNullOrEmpty(doc.PathName) ? "unsaved:" + doc.Title : doc.PathName);
             using var sha = System.Security.Cryptography.SHA256.Create();
-            return BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(identity))).Replace("-", "").Substring(0, 24);
+            string key=BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(identity))).Replace("-", "").Substring(0, 24);
+            if(OpenDocuments.Any(entry=>entry.Key==key))key+="-"+Guid.NewGuid().ToString("N");
+            OpenDocuments.Add((doc,key));return key;
         }
         public static bool Matches(ClashResult clash, Document doc) => clash.HostDocumentKey == Key(doc);
         public static void Activate(Document doc)
         {
-            if (doc.IsFamilyDocument) return;
+            if (doc.IsFamilyDocument) { LiveMonitorService.Instance.ActivateDocument("");return; }
             string key = Key(doc);
             ScanCoordinator.Observe(doc);
+            LiveMonitorService.Instance.ActivateDocument(key);
             if (key == _currentKey) { Current = doc; return; }
             if (States.TryGetValue(_currentKey, out var old))
             {
@@ -51,14 +59,20 @@ namespace ClashResolveAI.Core
             ClashDashboard.Instance.RestoreSession(state.Dashboard,state.Filter);
             Diagnostics.Log("Active document: " + Key(doc));
         }
-        public static void Close(Document doc)
+        public static void Close(Document doc) => CloseKey(Key(doc));
+        internal static void PruneClosedDocuments() {
+            foreach(var entry in OpenDocuments.Where(entry=>!entry.Document.IsValidObject).ToList())CloseKey(entry.Key);
+        }
+        private static void CloseKey(string key)
         {
-            string key = Key(doc);
+            LiveMonitorService.Instance.CloseDocument(key);
+            OpenDocuments.RemoveAll(entry=>entry.Key==key);
             ScanCoordinator.Close(key);
             RadarDataStore.Instance.Close(key);
             States.Remove(key);
             if (_currentKey != key) return;
             Current = null;
+            LiveMonitorService.Instance.ActivateDocument("");
             _currentKey = "";
             Session.Clashes = null;
             Session.Groups = null;

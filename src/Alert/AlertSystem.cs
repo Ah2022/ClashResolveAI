@@ -43,6 +43,12 @@ namespace ClashResolveAI.Alert
             }
         }
 
+        public void TriggerLiveAlerts(IReadOnlyList<LiveMonitor.LiveClashDto> clashes)
+        {
+            if(clashes.Count==0)return;
+            string color=clashes.Any(c=>c.Severity==ClashSeverity.Critical)?"#DC3232":"#E67800";
+            new ToastWindow($"{clashes.Count} new clashes","Recent host-element checks. See Radar for scope and verification.",color).ShowForSeconds(5);
+        }
         public void TriggerAlerts(UIApplication app, List<ClashResult> clashes)
         {
             if (clashes == null || !clashes.Any()) return;

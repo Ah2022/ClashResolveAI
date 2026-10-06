@@ -14,6 +14,7 @@ namespace ClashResolveAI.ClashEngine
         public int BelowTolerance, SkippedClearance;
         public int IndexedElements, TotalSources, CompletedSources, GeometryCacheHits, GeometryLoads;
         public long WallMilliseconds;
+        public DateTime? ScanStartedUtc,FirstResultUtc,ScanCompletedUtc;
         public double ProgressPercent => Phase=="Complete"?100:TotalSources==0?0:Math.Min(99,15+85.0*CompletedSources/TotalSources);
         public int Sources, Candidates, Tested, Excluded, MissingGeometry, BooleanFailures, Unverified;
         public long WorkMilliseconds;
@@ -46,6 +47,7 @@ namespace ClashResolveAI.ClashEngine
         private bool _disposed;
         public readonly List<ClashResult> Results;
         public readonly ScanStatistics Statistics;
+        public double LastSliceMilliseconds { get; private set; }
         public bool Complete { get; private set; }
         public bool Cancelled { get; private set; }
         internal ScanJob(IEnumerable<int> work, List<ClashResult> results, ScanStatistics stats, Action? cleanup=null)
@@ -53,11 +55,13 @@ namespace ClashResolveAI.ClashEngine
         public bool Advance(int milliseconds)
         {
             if (Complete || Cancelled) return true;
+            Statistics.ScanStartedUtc=Statistics.ScanStartedUtc??DateTime.UtcNow;
             var timer = Stopwatch.StartNew();
             try {
-                do { if (!_work.MoveNext()) { Complete = true; Statistics.Phase="Complete"; break; } }
+                do { bool next=_work.MoveNext();if(Statistics.FirstResultUtc==null&&Results.Count>0)Statistics.FirstResultUtc=DateTime.UtcNow;if (!next) { Complete = true; Statistics.Phase="Complete";Statistics.ScanCompletedUtc=DateTime.UtcNow; break; } }
                 while (timer.ElapsedMilliseconds < Math.Max(1, milliseconds));
             } finally {
+                LastSliceMilliseconds=timer.Elapsed.TotalMilliseconds;
                 Statistics.WallMilliseconds=_elapsed.ElapsedMilliseconds;
                 Statistics.SliceCount++;if(timer.Elapsed.TotalMilliseconds>50)Statistics.SlicesOver50ms++;
                 Statistics.WorkMilliseconds += timer.ElapsedMilliseconds;

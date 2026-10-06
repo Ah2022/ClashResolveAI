@@ -54,10 +54,10 @@ internal static class Phase2Checks
         filter.Types=ResultTypes.All;filter.Level="L2";
         check(new[]{lower,upper}.Where(filter.Matches).Single()==upper,"Shared view predicate combines result types with existing level filters");
         var radar=RadarDataStore.Instance;radar.Activate("fixture");radar.Clear();
-        ClashResult Live(long id,ClashTestType type=ClashTestType.HardClash){var c=Row(id,type);c.Origin=ResultOrigin.Live;c.LiveSessionId=radar.SessionId;return c;}
+        LiveClashDto Live(long id,ClashTestType type=ClashTestType.HardClash){var c=Row(id,type);c.Origin=ResultOrigin.Live;c.LiveSessionId=radar.SessionId;return LiveDtoFixtures.From(c);}
         var radarClearance=Enumerable.Range(1,739).Select(i=>Live(i,ClashTestType.ClearanceClash)).ToList();
         radar.AddClashes(radarClearance.Concat(new[]{Live(999)}));
-        radar.Reconcile(new HashSet<long>(Enumerable.Range(1,999).Select(i=>(long)i)),new(),ScanMode.HardOnly);
+        radar.Reconcile(new HashSet<long>(Enumerable.Range(1,999).Select(i=>(long)i)),new LiveClashDto[0],ScanMode.HardOnly,_=>true);
         check(radar.ActiveCount==739&&radar.GetActive().All(c=>c.TestType==ClashTestType.ClearanceClash&&c.Status==ClashStatus.Active),"Radar hard-only reconcile retains 739 clearance rows while removing resolved hard rows");
         radar.ReplaceSnapshot(new[]{Live(998)});
         check(radar.ActiveCount==1&&radar.GetActive()[0].ClashId=="row-998","Authoritative radar publication removes purged rows without treating them as scan results");

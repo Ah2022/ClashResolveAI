@@ -1,6 +1,6 @@
-﻿// LiveMonitor/ClashRadarPanel.cs  — v5.0
+// LiveMonitor/ClashRadarPanel.cs  — v5.0
 //
-// Floating WPF panel — real-time Clash Radar.
+// Revit dockable pane — immutable live Clash Radar.
 //
 // Matches the UI from the ClashRadar video:
 //   • "Clash Radar" header with live pulse indicator
@@ -14,7 +14,6 @@
 //   DataChanged fires on Revit thread → dispatched to WPF UI thread here.
 //   All Revit API calls go through ExternalEvent handlers (never direct).
 
-using Autodesk.Revit.UI;
 using ClashResolveAI.Core;
 using System;
 using System.Collections.Generic;
@@ -30,27 +29,25 @@ using ComboBox = System.Windows.Controls.ComboBox;
 
 namespace ClashResolveAI.LiveMonitor
 {
-    public partial class ClashRadarPanel : Window
+    public partial class ClashRadarPanel : Page, Autodesk.Revit.UI.IDockablePaneProvider
     {
         // ── Singleton ──────────────────────────────────────────────────
         private static ClashRadarPanel? _instance;
         public static ClashRadarPanel  Instance  => _instance ??= new ClashRadarPanel();
         public static new bool             IsVisible => _instance?.IsLoaded == true
-                                                 && _instance.Visibility == Visibility.Visible;
-
-        // ── Revit integration (injected by LiveMonitorService) ─────────
-        // IMPORTANT: the handler instances stored here MUST be the same ones
-        // that were passed to ExternalEvent.Create() in LiveMonitorService.
-        // Otherwise mutating Target/Mode here has no effect on the raised event.
-        private ExternalEvent?     _navEvent;
-        private ExternalEvent?     _refreshEvent;
-        private ClashNavHandler?     _navHandler;
-        private ClashRefreshHandler? _refreshHandler;
+                                                 && ((UIElement)_instance).IsVisible;
 
         // ── Data ───────────────────────────────────────────────────────
-        private List<ClashResult>                    _displayed     = new List<ClashResult>();
-        private ClashResult?                         _selected;
-        private string                               _catFilter     = AllCats;
+        private List<LiveClashDto> _displayed=>ViewModel.Rows.ToList();
+        private LiveClashDto? _selected {get=>ViewModel.Selected;set=>ViewModel.Selected=value;}
+        public ClashRadarViewModel ViewModel {get;}
+        public static readonly Autodesk.Revit.UI.DockablePaneId PaneId=new Autodesk.Revit.UI.DockablePaneId(new Guid("E4C13235-A776-4EA6-B2DD-B32930CD05D8"));
+        public void SetupDockablePane(Autodesk.Revit.UI.DockablePaneProviderData data){data.FrameworkElement=this;data.InitialState=new Autodesk.Revit.UI.DockablePaneState {DockPosition=Autodesk.Revit.UI.DockPosition.Right};}
+        public void Show()=>LiveMonitorService.Instance.ShowRadar();
+        public void Hide()=>ViewModel.HideCommand.Execute(null);
+        public void Close()=>Hide();
+        internal void ShowInApi(Autodesk.Revit.UI.UIApplication app,bool show){var pane=app.GetDockablePane(PaneId);if(show)pane.Show();else pane.Hide();}
+        internal void Shutdown(){_closing=true;_popout?.Close();SaveLayout();_pulseTimer.Stop();ViewModel.Dispose();}
         private const string                         AllCats        = "All Categories";
 
         // ── UI controls (populated in BuildUI) ────────────────────────
@@ -67,10 +64,6 @@ namespace ClashResolveAI.LiveMonitor
         private Button       _btnRefresh  = null!;
         private Button       _btnExport   = null!;
 
-        // FIX v7.0 (Plan Phase 4): Store DataChanged handler as a named field so
-        // it can be properly unsubscribed when the panel closes, preventing the
-        // subscription leak that caused double-refresh after reopen cycles.
-        private EventHandler? _dataChangedHandler;
 
         // ── Pulse animation timer ──────────────────────────────────────
         private readonly DispatcherTimer _pulseTimer;
@@ -105,32 +98,23 @@ namespace ClashResolveAI.LiveMonitor
 
         public ClashRadarPanel()
         {
-            Title               = "Clash Radar";
-            Width               = 480; Height = 820;
-            MinWidth            = 360; MinHeight = 600;
-            Background          = Bg;
-            BorderBrush         = Bdr;
-            BorderThickness     = new Thickness(1);
-            WindowStyle         = WindowStyle.None;
-            AllowsTransparency  = false;
-            ResizeMode          = ResizeMode.CanResizeWithGrip;
-            Topmost             = false;
-            ShowInTaskbar       = false;
-
-            var wa = SystemParameters.WorkArea;
-            Left = wa.Right  - Width  - 14;
-            Top  = wa.Top    + 40;
-
+            MinWidth=280;Background=Bg;
+            ViewModel=new ClashRadarViewModel(RadarDataStore.Instance,new RadarActions(),
+                action=>Dispatcher.BeginInvoke(DispatcherPriority.Background,action));
+            DataContext=ViewModel;
             BuildUI();
-
-            // FIX v7.0: Store handler reference so it can be unsubscribed on Close.
-            _dataChangedHandler = (s,e)=>{
-                if(_refreshQueued)return;
-                _refreshQueued=true;
-                Dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>{_refreshQueued=false;RefreshList();}));
+            ViewModel.SelectionChanged+=(_,__)=>{SelectClashPreview(ViewModel.Selected);UpdateActionButtons();};
+            ViewModel.PropertyChanged+=(_,e)=>{
+                if(e.PropertyName==nameof(ViewModel.Rows)||e.PropertyName==nameof(ViewModel.Categories)||e.PropertyName==nameof(ViewModel.RequiresFullScan))RefreshList();
+                if(e.PropertyName==nameof(ViewModel.Mode)){
+                    _statusLabel.Text=ViewModel.Mode.ToString().ToUpperInvariant();
+                    _pulse.Fill=ViewModel.Mode==MonitorMode.Off?TxtG:AccGreen;
+                    if(ViewModel.Mode==MonitorMode.Off)_pulseTimer?.Stop();else _pulseTimer?.Start();
+                }
             };
-            RadarDataStore.Instance.DataChanged += _dataChangedHandler;
-
+            Loaded+=(_,__)=>{RefreshList();if(ViewModel.Running&&ViewModel.Mode!=MonitorMode.Off)_pulseTimer?.Start();};
+            IsVisibleChanged+=(_,__)=>{if(((UIElement)this).IsVisible){RefreshList();SelectClashPreview(ViewModel.Selected);if(ViewModel.Running&&ViewModel.Mode!=MonitorMode.Off)_pulseTimer?.Start();}else{_pulseTimer?.Stop();_popout?.Close();}};
+            Unloaded+=(_,__)=>{_pulseTimer?.Stop();_popout?.Close();SaveLayout();};
             // Pulse animation
             _pulseTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
             _pulseTimer.Tick += (s, e) =>
@@ -140,30 +124,7 @@ namespace ClashResolveAI.LiveMonitor
             };
             _pulseTimer.Start();
 
-            Closed += (s, e) =>
-            {
-                // FIX v7.0: Unsubscribe DataChanged before nulling _instance.
-                // Without this, the closed Window keeps receiving events, causing
-                // silent Dispatcher exceptions and double-refresh on re-open.
-                if (_dataChangedHandler != null)
-                {
-                    RadarDataStore.Instance.DataChanged -= _dataChangedHandler;
-                    _dataChangedHandler = null;
-                }
-                _popout?.Close();SaveLayout();
-                _instance = null;
-                _pulseTimer.Stop();
-            };
-        }
 
-        // ── Revit wiring (called by LiveMonitorService after ExternalEvent creation) ──
-        public void SetRevitEvents(ExternalEvent navEvent, ExternalEvent refreshEvent,
-                                   ClashNavHandler navHandler, ClashRefreshHandler refreshHandler)
-        {
-            _navEvent       = navEvent;
-            _refreshEvent   = refreshEvent;
-            _navHandler     = navHandler;
-            _refreshHandler = refreshHandler;
         }
 
         // ══════════════════════════════════════════════════════════════
@@ -211,7 +172,7 @@ namespace ClashResolveAI.LiveMonitor
             var closeBtn = Btn("✕", Transp, TxtG, 24, 24);
             closeBtn.FontSize = 11;
             closeBtn.Cursor   = Cursors.Hand;
-            closeBtn.Click   += (s, e) => Hide();
+            closeBtn.Command=ViewModel.HideCommand;
             Grid.SetColumn(closeBtn, 2);
 
             // Stack status + close
@@ -236,7 +197,7 @@ namespace ClashResolveAI.LiveMonitor
                 Padding         = new Thickness(10, 0, 8, 0),
                 Child           = g
             };
-            border.MouseLeftButtonDown += (s, e) => { if (e.ButtonState == MouseButtonState.Pressed) DragMove(); };
+
             return border;
         }
 
@@ -284,8 +245,7 @@ namespace ClashResolveAI.LiveMonitor
             _catCombo.SelectionChanged += (s, e) =>
             {
                 if (_refreshing) return;
-                _catFilter = _catCombo.SelectedItem as string ?? AllCats;
-                RefreshList();
+                ViewModel.Category = _catCombo.SelectedItem as string ?? AllCats;
             };
             Grid.SetColumn(_catCombo, 1);
 
@@ -297,15 +257,15 @@ namespace ClashResolveAI.LiveMonitor
             var stack=new StackPanel();stack.Children.Add(g);
             var filters=new WrapPanel {Margin=new Thickness(8,5,8,5)};
             foreach(var item in new[]{(ResultTypes.Hard,"Hard"),(ResultTypes.PossibleHard,"Possible hard"),(ResultTypes.Clearance,"Clearance"),(ResultTypes.Unverified,"Unverified")}){
-                var type=item.Item1;var check=new CheckBox {Content=item.Item2,Foreground=TxtW,Margin=new Thickness(4),IsChecked=(RadarDataStore.Instance.Types&type)!=0};
+                var type=item.Item1;var check=new CheckBox {Content=item.Item2,Foreground=TxtW,Margin=new Thickness(4),IsChecked=(ViewModel.Types&type)!=0};
                 check.Checked+=(_,__)=>ChangeResultTypes();check.Unchecked+=(_,__)=>ChangeResultTypes();_resultChecks[type]=check;filters.Children.Add(check);
             }
             var purge=new Button {Content="Purge non-hard results",Margin=new Thickness(4),Padding=new Thickness(6,2,6,2)};
-            purge.Click+=(_,__)=>{if(System.Windows.MessageBox.Show("Purge non-hard results (including possible hard) from this project's live history?", "Clash Radar",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes)RadarDataStore.Instance.PurgeNonHard();};filters.Children.Add(purge);
-            _thisSession=new CheckBox {Content="This session",Foreground=TxtW,Margin=new Thickness(4),IsChecked=RadarDataStore.Instance.ThisSession};
-            _thisSession.Checked+=(_,__)=>{if(!_refreshing)RadarDataStore.Instance.ThisSession=true;};
-            _thisSession.Unchecked+=(_,__)=>{if(!_refreshing)RadarDataStore.Instance.ThisSession=false;};filters.Children.Add(_thisSession);
-            _inputsBanner=new TextBlock {Text="Model inputs changed, run Full Scan to re-verify",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.Orange,Margin=new Thickness(8,4,8,4),Visibility=ScanCoordinator.InputsStale?Visibility.Visible:Visibility.Collapsed};
+            purge.Command=ViewModel.PurgeCommand;filters.Children.Add(purge);
+            _thisSession=new CheckBox {Content="This session",Foreground=TxtW,Margin=new Thickness(4),IsChecked=ViewModel.ThisSession};
+            _thisSession.Checked+=(_,__)=>{if(!_refreshing)ViewModel.ThisSession=true;};
+            _thisSession.Unchecked+=(_,__)=>{if(!_refreshing)ViewModel.ThisSession=false;};filters.Children.Add(_thisSession);
+            _inputsBanner=new TextBlock {Text="Model inputs changed, run Full Scan to re-verify",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.Orange,Margin=new Thickness(8,4,8,4),Visibility=ViewModel.RequiresFullScan?Visibility.Visible:Visibility.Collapsed};
             stack.Children.Add(filters);stack.Children.Add(_inputsBanner);bdr.Child = stack;
             return bdr;
         }
@@ -319,56 +279,30 @@ namespace ClashResolveAI.LiveMonitor
         {
             if(_refreshing)return;
             var types=_resultChecks.Where(x=>x.Value.IsChecked==true).Aggregate(ResultTypes.None,(value,x)=>value|x.Key);
-            RadarDataStore.Instance.Types=types;RefreshList();
+            ViewModel.Types=types;
         }
         private CheckBox _thisSession=null!;
         private TextBlock _inputsBanner=null!;
-        private bool _refreshQueued;
         private bool _refreshing;
         private void RefreshList()
         {
             if (_refreshing) return;
             _refreshing = true;
-            // CRASH FIX v8.1: This method is invoked asynchronously via
-            // Dispatcher.BeginInvoke from RadarDataStore.DataChanged. By the
-            // time it runs, ElementA/ElementB on cached ClashResults may be
-            // stale (deleted/undone, or from an unloaded linked model).
-            // An unhandled exception here terminates Revit, so the whole
-            // body is guarded. Category lookups use SafeCategoryName/
-            // SafeElementId instead of raw Element.Category/.Id access.
+            // Dispatcher refresh reads immutable DTO snapshots. Deleted,
+            // undone or unloaded endpoints never require Revit API access here.
+            // Keep the dispatcher boundary guarded against rendering failures.
             try
             {
-            // Refresh category filter dropdown
-            var cats = RadarDataStore.Instance.GetCategories();
-            var prev = _catCombo.SelectedItem as string ?? AllCats;
+            var prev=ViewModel.Category;
             _catCombo.Items.Clear();
-            _catCombo.Items.Add(AllCats);
-            foreach (var c in cats) _catCombo.Items.Add(c);
-            _catCombo.SelectedItem = _catCombo.Items.Contains(prev) ? prev : AllCats;
-            _catFilter = _catCombo.SelectedItem as string ?? AllCats;
-
-            // Get filtered data
-            foreach(var entry in _resultChecks)entry.Value.IsChecked=(RadarDataStore.Instance.Types&entry.Key)!=0;
-            _thisSession.IsChecked=RadarDataStore.Instance.ThisSession;
-            _inputsBanner.Visibility=ScanCoordinator.InputsStale?Visibility.Visible:Visibility.Collapsed;
-            var all = RadarDataStore.Instance.GetVisible();
-            _displayed = _catFilter == AllCats
-                ? all
-                : all.Where(c =>
-                    c.CategoryNameA.Equals(_catFilter, StringComparison.OrdinalIgnoreCase) ||
-                    c.CategoryNameB.Equals(_catFilter, StringComparison.OrdinalIgnoreCase))
-                  .ToList();
-
-            // Update count badge
-            _badgeCount.Text = _displayed.Count.ToString();
-
-            _rowsPanel.ItemsSource=_displayed;
-
-            // Restore selection if still present
-            var previousKey=_selected?.NormalizedKey;
-            _selected=_displayed.FirstOrDefault(c=>c.NormalizedKey==previousKey);
-            _rowsPanel.SelectedItem=_selected;
-            SelectClashPreview(_selected);UpdateActionButtons();
+            foreach(var category in ViewModel.Categories)_catCombo.Items.Add(category);
+            _catCombo.SelectedItem=prev;
+            foreach(var entry in _resultChecks)entry.Value.IsChecked=(ViewModel.Types&entry.Key)!=0;
+            _thisSession.IsChecked=ViewModel.ThisSession;
+            _inputsBanner.Visibility=ViewModel.RequiresFullScan?Visibility.Visible:Visibility.Collapsed;
+            _badgeCount.Text=ViewModel.VisibleCount.ToString();
+            _rowsPanel.ItemsSource=ViewModel.Rows;
+            _rowsPanel.SelectedItem=ViewModel.Selected;
             }
             catch (Exception ex)
             {
@@ -377,23 +311,25 @@ namespace ClashResolveAI.LiveMonitor
             finally { _refreshing = false; }
         }
 
-        private void SelectClash(ClashResult clash)
+        private void SelectClash(LiveClashDto clash)
         {
             _selected=clash;
             SelectClashPreview(clash);
             UpdateActionButtons();
         }
 
-        private void SelectClashPreview(ClashResult? clash)
+        private void SelectClashPreview(LiveClashDto? clash)
         {
             UpdateDetails(clash);
             if(clash==null){ClearPreviewImages();return;}
-            if(ScanCoordinator.IsStale(clash)){_lastSnapClashId="";_inspector.Clear("Elements changed · re-check this session or run Full Scan");return;}
+            if(!((UIElement)this).IsVisible){_lastSnapClashId="";return;}
+            if(!ViewModel.CanInspect){_lastSnapClashId="";_inspector.Clear("Session changed · re-check before inspection");return;}
+            if(clash.Verification!=LiveVerificationState.Verified){_lastSnapClashId="";_inspector.Clear("Elements changed · re-check this session or run Full Scan");return;}
             string key=clash.NormalizedKey+":"+clash.GeometryRevision;
             if(_lastSnapClashId==key)return;
             _lastSnapClashId=key;
             _inspector.Clear("Loading geometry…");
-            LiveMonitorService.Instance.RequestInspection(clash);
+            ViewModel.InspectCommand.Execute(null);
         }
         private void ClearPreviewImages()
         { _lastSnapClashId="";_inspector.Clear();UpdateDetails(null); }
@@ -410,53 +346,11 @@ namespace ClashResolveAI.LiveMonitor
         //  BUTTON HANDLERS
         // ══════════════════════════════════════════════════════════════
 
-        private void OnShow3D(object s, RoutedEventArgs e)
-        {
-            if (_selected == null || _navEvent == null || _navHandler == null) return;
-            _navHandler.Target = _selected;
-            _navHandler.Mode   = NavMode.View3D;
-            _navEvent.Raise();
-        }
-
-        private void OnShow2D(object s, RoutedEventArgs e)
-        {
-            if (_selected == null || _navEvent == null || _navHandler == null) return;
-            _navHandler.Target = _selected;
-            _navHandler.Mode   = NavMode.View2D;
-            _navEvent.Raise();
-        }
-
-        private void OnIgnore(object s, RoutedEventArgs e)
-        {
-            if (_selected == null) return;
-            RadarDataStore.Instance.IgnoreClash(_selected);
-            _selected = null;
-            ClearPreviewImages();
-            UpdateActionButtons();
-        }
-
-        public void SetScanStatus(string text,bool complete)
-        { _btnRefresh.IsEnabled=complete; _btnRefresh.Content=complete?$"↺ Re-check drawn ({LiveSessionLedger.Count})":"Checking…"; _scanText.Text=text;_scanText.ToolTip=text;_cancelScan.IsEnabled=!complete; }
-        public void UpdateLedgerCount(){if(_btnRefresh.IsEnabled)_btnRefresh.Content=$"↺ Re-check drawn ({LiveSessionLedger.Count})";}
-        public void NotifyGeometryChanged()=>Dispatcher.BeginInvoke(new Action(()=>{_inputsBanner.Visibility=ScanCoordinator.InputsStale?Visibility.Visible:Visibility.Collapsed;if(_selected!=null&&ScanCoordinator.IsStale(_selected))SelectClashPreview(_selected);}));
-        private void RequestScanAction(ClashRefreshHandler.Request action)
-        {
-            if(!LiveMonitorService.Instance.IsRunning||_refreshHandler==null||_refreshEvent==null){SetScanStatus("Start Live Monitor first",true);return;}
-            _refreshHandler.Action=action;_refreshEvent.Raise();
-        }
-        private void OnRefresh(object s, RoutedEventArgs e)
-        {
-            _btnRefresh.IsEnabled = false;
-            _btnRefresh.Content   = "…";
-            RequestScanAction(ClashRefreshHandler.Request.Ledger);
-
-        }
-
-        private void OnExport(object s, RoutedEventArgs e)
-        {
-            RadarExporter.ExportToCsv(_displayed.ToList());
-        }
-
+        private void OnShow3D(object s,RoutedEventArgs e)=>ViewModel.Show3DCommand.Execute(null);
+        private void OnShow2D(object s,RoutedEventArgs e)=>ViewModel.Show2DCommand.Execute(null);
+        public void SetScanStatus(string text,bool complete)=>ViewModel.SetMessage(text,complete);
+        public void UpdateLedgerCount()=>ViewModel.Refresh();
+        public void NotifyGeometryChanged()=>Dispatcher.BeginInvoke(new Action(()=>{ViewModel.Refresh();SelectClashPreview(ViewModel.Selected);}));
         // ══════════════════════════════════════════════════════════════
         //  HELPERS
         // ══════════════════════════════════════════════════════════════
@@ -525,20 +419,7 @@ namespace ClashResolveAI.LiveMonitor
 
         // ── Public state control (called by LiveMonitorService) ──────────
 
-        public void SetLiveStatus(string message,bool checking=false)
-        {
-            _liveText.Text=message;_liveText.ToolTip=message;
-            _statusLabel.Text=checking?"● CHECKING":"● WATCHING";
-            _statusLabel.ToolTip="Live checks follow edits and selection. Re-check drawn checks only the recorded session.";
-        }
-        public void SetActiveState(bool active)
-        {
-            _statusLabel.Text       = active ? "● WATCHING" : "● IDLE";
-            _statusLabel.Foreground = active ? AccGreen : TxtG;
-            _pulse.Fill             = active ? AccGreen : TxtG;
-            _liveText.Text=active?"Watching edits and selection · Re-check uses the session":"Live monitoring stopped";
-            UpdateLedgerCount();
-            if (active) _pulseTimer.Start(); else _pulseTimer.Stop();
-        }
+        public void SetLiveStatus(string message,bool checking=false)=>ViewModel.SetMessage(message,!checking);
+        public void SetActiveState(bool active){if(active)_pulseTimer.Start();else _pulseTimer.Stop();ViewModel.Refresh();}
     }
 }

@@ -74,13 +74,13 @@ namespace ClashResolveAI.Core
                 checks.Single(c=>(string)c.Content=="Clearance").IsChecked=true;
                 Check(dashboard.GetVisibleClashes().Count==741&&Descendants<DataGrid>(window).Single().Items.Count==741,"Dashboard checkbox applies the same predicate as the export snapshot");
                 CaptureLifecycleUi(window,"phase2-dashboard.png");
-                var live=Row(800,ClashTestType.HardClash);live.Origin=ResultOrigin.Live;live.LiveSessionId=RadarDataStore.Instance.SessionId;RadarDataStore.Instance.AddClashes(new[]{live});
+                var live=Row(800,ClashTestType.HardClash);live.Origin=ResultOrigin.Live;live.LiveSessionId=RadarDataStore.Instance.SessionId;var liveDto=new LiveClashDto(live,new LiveElementIdentity(live.ElementAId,"fixture-A",live.HostDocumentKey),new LiveElementIdentity(live.ElementBId,"fixture-B",live.HostDocumentKey),new LivePoint(0,0,0),"fixture");RadarDataStore.Instance.AddClashes(new[]{liveDto});
                 radar=ClashRadarPanel.Instance;radar.Width=400;radar.Show();DrainUi(radar);radar.UpdateLayout();
                 var radarChecks=Descendants<CheckBox>(radar).Where(c=>new[]{"Hard","Possible hard","Clearance","Unverified"}.Contains(c.Content as string)).ToList();
                 Check(radarChecks.Count==4&&radarChecks.All(c=>c.TransformToAncestor(radar).Transform(new System.Windows.Point()).Y+c.ActualHeight<=radar.ActualHeight),"Narrow radar lays out all four result filters without clipping");
                 radarChecks.Single(c=>(string)c.Content=="Unverified").IsChecked=true;DrainUi(radar);
                 Check(dashboard.ViewFilter.Types==(ResultTypes.Hard|ResultTypes.PossibleHard|ResultTypes.Clearance)&&checks.Single(c=>(string)c.Content=="Unverified").IsChecked==false,"Radar filters leave Dashboard filters unchanged");
-                RadarDataStore.Instance.IgnoreClash(live);Check(recurring.Status!=ClashStatus.Ignored,"Radar Ignore does not change the same Full Scan pair");
+                RadarDataStore.Instance.IgnoreClash(liveDto);Check(recurring.Status!=ClashStatus.Ignored,"Radar Ignore does not change the same Full Scan pair");
                 CaptureLifecycleUi(radar,"phase2-radar.png");
                 dashboard.SetResultTypes(ResultTypes.Hard|ResultTypes.PossibleHard);dashboard.ViewFilter.Level="L1";dashboard.ViewChanged();
                 var export=dashboard.GetVisibleClashes().Select(c=>c.ExportCopy()).ToList();

@@ -50,8 +50,8 @@ namespace ClashResolveAI.Core
             if(_step==401){
                 _unrelated=ClashDashboard.Instance.Clashes.First(c=>c.TestType==ClashTestType.HardClash);
                 app.ActiveUIDocument.Selection.SetElementIds(new ElementId[0]);
-                service.Start(app);service.ClearSession(doc);
-                new ClashRefreshHandler().Execute(app);
+                service.Start(app);service.ClearSession(doc);service.ExecuteQueued(app);
+                LiveMonitorService.Instance.RequestScan(LiveScanAction.Ledger);LiveMonitorService.Instance.ExecuteQueued(app);
                 Check(Descendants<TextBlock>(ClashRadarPanel.Instance).Any(t=>t.Text=="Nothing drawn yet"),"Empty ledger finishes with Nothing drawn yet");
                 app.Application.DocumentChanged+=RecordLedgerEvent;
                 using(var tx=new Transaction(doc,"Phase4 place segment 1")){tx.Start();_ledgerPipe=NativePipe(doc,new XYZ(200,-5,3),new XYZ(200,5,3)).Id;tx.Commit();}
@@ -60,8 +60,7 @@ namespace ClashResolveAI.Core
             if(_step==402){
                 Check(!ScanCoordinator.IsStale(_unrelated!),"An unrelated clash stays current after drawing a pipe");
                 var scene=Inspection.InspectionGeometry.Build(doc,_unrelated!,20);
-                var pin=new Inspection.InspectionHandler {Pending=_unrelated,PinScene=scene,PinPreferences=new Inspection.InspectorPreferences {Context=true}};
-                pin.Execute(app);
+                Inspection.InspectionHandler.Run(app,_unrelated!,scene,new Inspection.InspectorPreferences {Context=true});
                 Check(new FilteredElementCollector(doc).OfClass(typeof(View3D)).Cast<View3D>().Any(v=>v.Name.StartsWith("Clash_"+_unrelated!.ClashId+"_")),"Unrelated clash remains pinnable after a live edit");
                 using(var tx=new Transaction(doc,"Phase4 place segment 2")){
                     tx.Start();var first=(Autodesk.Revit.DB.Plumbing.Pipe)doc.GetElement(_ledgerPipe!);
@@ -80,13 +79,13 @@ namespace ClashResolveAI.Core
             if(_step==403){
                 _ledgerCount=LiveSessionLedger.LiveIds(doc).Count;_previousLive=service.LastStatistics;
                 ClashRadarPanel.Instance.SetScanStatus("Verification re-check",false);
-                new ClashRefreshHandler().Execute(app);Next(404);return;
+                LiveMonitorService.Instance.RequestScan(LiveScanAction.Ledger);LiveMonitorService.Instance.ExecuteQueued(app);Next(404);return;
             }
             if(_step==404){
                 var stats=service.LastStatistics!;
                 Check(!ReferenceEquals(stats,_previousLive)&&stats.Sources==_ledgerCount&&stats.IndexedElements==0,"Re-check sources equal the live ledger count and index zero elements");
                 Check(!ScanCoordinator.Busy,"Ledger re-check does not start a full-model coordinator job");
-                Check(Descendants<Button>(ClashRadarPanel.Instance).Any(b=>(b.Content as string)?.StartsWith("↺ Re-check drawn")==true&&b.IsEnabled),"Live completion re-enables Re-check drawn with its count");
+                Check(Descendants<Button>(ClashRadarPanel.Instance).Any(b=>(b.Content as string)=="Re-check session"&&b.IsEnabled),"Live completion re-enables the view-model recheck command");
                 Check(!ScanCoordinator.ResultsStale&&!LiveSessionLedger.Store.HasUnchecked(DocumentSession.Key(doc)),"Live work is current after local checks finish with no unchecked ledger IDs");
                 File.WriteAllText(Path.Combine(_folder,"phase4-ledger-scan.json"),JsonConvert.SerializeObject(new {ledgerCount=_ledgerCount,statistics=stats,placementEvents=PlacementEvents,addedFittings=AddedFittings},Formatting.Indented));
                 CaptureLifecycleUi(ClashRadarPanel.Instance,"phase4-radar.png");
@@ -102,7 +101,7 @@ namespace ClashResolveAI.Core
                 Check(doc.GetElement(_ledgerSecond!)!=null&&LiveSessionLedger.LiveIds(doc).Any(id=>id==_ledgerSecond),"Redo restores the segment to the live ledger through DocumentChanged");
                 Check(PlacementEvents.Count==2,"Separate placed pipe segments each produce their own DocumentChanged transaction");
                 Check(AddedFittings.Count>0||File.Exists(Path.Combine(_folder,"phase4-fitting-unavailable.txt")),"Fitting Added-event observation or unavailable routing reason is recorded");
-                service.ClearSession(doc);
+                service.ClearSession(doc);service.ExecuteQueued(app);
                 var settings=AppSettings.Load().ScanSnapshot();settings.TrackEditedElements=false;AppSettings.Save(settings);
                 using(var tx=new Transaction(doc,"Phase4 edited tracking off")){tx.Start();ElementTransformUtils.MoveElement(doc,_ledgerPipe!,new XYZ(0,0,2));tx.Commit();}
                 Next(407);return;
@@ -123,10 +122,9 @@ namespace ClashResolveAI.Core
                 Check(!ScanCoordinator.ResultsStale,"Live deletion checks leave no unchecked live work");
                 Check(ScanCoordinator.FullResultsStale,"Live deletion does not certify the separate Dashboard snapshot");
                 service.Stop();Check(LiveSessionLedger.Count==0,"Stopping Live Monitor clears the live ledger");
-                Descendants<Button>(ClashRadarPanel.Instance).First(b=>(b.Content as string)?.StartsWith("↺ Re-check drawn")==true).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Check(Descendants<TextBlock>(ClashRadarPanel.Instance).Any(t=>t.Text=="Start Live Monitor first"),"Re-check after Stop handles disposed events without disabling the button permanently");
+                Check(!ClashRadarPanel.Instance.ViewModel.CheckChangesCommand.CanExecute(null)&&ClashRadarPanel.Instance.ViewModel.StatusText=="Off","Stopped monitor disables the check command and displays Off");
                 var closing=app.Application.NewProjectDocument(UnitSystem.Metric);string closedKey=DocumentSession.Key(closing);
-                LiveSessionLedger.Store.Note(closedKey,1,"fixture",LedgerOrigin.Drawn);closing.Close(false);
+                LiveSessionLedger.Store.Note(closedKey,1,"fixture",LedgerOrigin.Drawn);closing.Close(false);DocumentSession.PruneClosedDocuments();
                 Check(LiveSessionLedger.Store.Entries(closedKey).Count==0,"Closing a document clears its ledger even with the monitor stopped");
                 app.Application.DocumentChanged-=RecordLedgerEvent;
                 ScanCoordinator.Start(doc,"",null,(rows,stats)=>ClashDashboard.Instance.MergeFullScan(rows,stats.Mode,stats.Scope));

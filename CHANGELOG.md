@@ -2,6 +2,15 @@
 
 This is the single release history for the cleaned repository. Earlier notes are summarized here rather than retained as separate versioned source trees or change documents.
 
+## 9.4.0 Live Monitor upgrade — 2026-10-06
+
+- Document and session generation guard every queued live operation; one Revit gateway owns execution and coalesces requests.
+- ChangeAccumulator and LiveScanScheduler preserve changes across cancellation and Full Scan, debounce local work, and pause after excessive API slice duration.
+- Radar stores immutable DTOs. Navigation and inspection resolve current UniqueIds, geometry revisions and link environments inside Revit handlers.
+- Registered dockable Radar uses commands and explicit Live, Trigger and Off modes, scan status and queue indicators.
+- Correlated timestamps and scan counters appear in Radar diagnostics and bounded asynchronous JSONL logs. Diagnostic snapshots can be exported.
+- Clean version-checked deployment backs up owned files and verifies every installed DLL against the fresh build.
+
 ## 9.4.0 — 2026-10-01
 
 ### Detection and result lifecycle

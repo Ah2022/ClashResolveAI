@@ -214,6 +214,7 @@ namespace ClashResolveAI.Core
         public Element ElementA { get => _elementA; set { _elementA = value; ElementAId = SafeElementId(value); CategoryNameA = SafeCategoryName(value, DisciplineA); } }
         public long ElementAId { get; set; }
         public string HostDocumentKey { get; set; } = "";
+        public long SessionGeneration { get; set; }
         public string LinkInstanceA { get; set; } = "";
         public string LinkInstanceB { get; set; } = "";
         private Element _elementB = null!;

@@ -84,13 +84,14 @@ namespace ClashResolveAI.ClashEngine
                 if(bounds!=null)yield return new IndexedElement{Element=element,Box=bounds};
             }
         }
-        public ScanJob CreateJob(IEnumerable<ElementId>? changedIds, bool includeLinks, CoordinationZone? zone=null, string levelId="", ScanMode? mode=null, bool? includeLinkToLink=null, bool nativeLinkQueries=false)
+        public ScanJob CreateJob(IEnumerable<ElementId>? changedIds, bool includeLinks, CoordinationZone? zone=null, string levelId="", ScanMode? mode=null, bool? includeLinkToLink=null, bool nativeLinkQueries=false,AppSettings? settingsSnapshot=null)
         {
             _hostKey=DocumentSession.Key(_doc);
             ClearJobCaches();
+            _links.InvalidateCache(); // Capture current loaded documents and transforms for this job.
             var stats=new ScanStatistics { Scope=new ScanScope(_hostKey) }; LastStatistics=stats;
             var results=new List<ClashResult>();
-            return new ScanJob(Enumerate(changedIds?.ToList(),includeLinks,zone,levelId,results,stats,mode,includeLinkToLink,nativeLinkQueries),results,stats,ClearJobCaches);
+            return new ScanJob(Enumerate(changedIds?.ToList(),includeLinks,zone,levelId,results,stats,mode,includeLinkToLink,nativeLinkQueries,settingsSnapshot??AppSettings.Load().ScanSnapshot()),results,stats,ClearJobCaches);
         }
         private void ClearJobCaches()
         {
@@ -106,9 +107,9 @@ namespace ClashResolveAI.ClashEngine
             foreach(var c in job.Results)c.GeometryRevision=ScanCoordinator.Revision;
             return job.Results;
         }
-        private IEnumerable<int> Enumerate(List<ElementId>? changed,bool includeLinks,CoordinationZone? zone,string levelId,List<ClashResult> results,ScanStatistics stats,ScanMode? mode,bool? includeLinkToLink,bool nativeLinkQueries)
+        private IEnumerable<int> Enumerate(List<ElementId>? changed,bool includeLinks,CoordinationZone? zone,string levelId,List<ClashResult> results,ScanStatistics stats,ScanMode? mode,bool? includeLinkToLink,bool nativeLinkQueries,AppSettings frozenSettings)
         {
-            var settings=AppSettings.Load().ScanSnapshot();
+            var settings=frozenSettings.ScanSnapshot();
             settings.EffectiveMode=mode??(changed==null?settings.FullScanMode:settings.LiveMode);
             stats.Mode=settings.EffectiveMode;
             settings.IncludeLinkToLink=includeLinkToLink??settings.IncludeLinkToLink;
@@ -256,7 +257,7 @@ namespace ClashResolveAI.ClashEngine
                 var gb=Geometry(target,tl);yield return 0;
                 stats.Tested++;
                 bool unknown=ga.Error!=""||gb.Error!="";
-                if(unknown){stats.MissingGeometry++;if(hardOnly){stats.Scope.MissingPair(key);yield break;}}
+                if(unknown){stats.MissingGeometry++;stats.Scope.MissingPair(key);stats.Scope.MissingSource(source.Id.Value,sl?.Instance.UniqueId??"");stats.Scope.MissingSource(target.Id.Value,tl?.Instance.UniqueId??"");if(hardOnly)yield break;}
                 var reason=unknown?UnverifiedReason.MissingGeometry:UnverifiedReason.SurfaceClearance;
                 double volume=0;XYZ point=GetClashPoint(a,b);string evidence=unknown?ga.Error+" "+gb.Error:"";
                 if(!unknown&&AABBOverlap(a,b))
@@ -267,7 +268,7 @@ namespace ClashResolveAI.ClashEngine
                         try {
                             using var hit=BooleanOperationsUtils.ExecuteBooleanOperation(sa,sb,BooleanOperationsType.Intersect);
                             if(hit!=null&&hit.Volume>0){volume+=hit.Volume*Math.Pow(304.8,3);point=hit.ComputeCentroid();}
-                        }catch(Exception ex){boolFailed=true;unknown=true;reason=UnverifiedReason.SolidTest;stats.BooleanFailures++;evidence="Boolean intersection failed: "+ex.Message;}
+                        }catch(Exception ex){boolFailed=true;unknown=true;reason=UnverifiedReason.SolidTest;stats.BooleanFailures++;stats.Scope.MissingPair(key);stats.Scope.MissingSource(source.Id.Value,sl?.Instance.UniqueId??"");stats.Scope.MissingSource(target.Id.Value,tl?.Instance.UniqueId??"");evidence="Boolean intersection failed: "+ex.Message;}
                         finally { stats.BooleanMilliseconds+=ScanStatistics.Since(started); }
                     }
                 bool hard=volume>=Math.Max(0.001,settings.MinimumOverlapMM3);

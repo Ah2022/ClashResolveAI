@@ -187,42 +187,18 @@ namespace ClashResolveAI.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class LiveMonitorCommand : IExternalCommand
     {
-        // FIX v6.0 (Bug 4):
-        //   ON  → Start() opens ClashRadarPanel + fires initial scan toast.
-        //   ON (panel re-open) → RewirePanel() re-attaches live ExternalEvents
-        //     to a fresh panel singleton (user closed and clicked again while
-        //     monitor was already running).
-        //   OFF → Stop() marks panel as idle; user keeps the list visible.
+        // The ribbon opens the registered pane. Monitoring mode is selected
+        // inside Radar; reopening a hidden pane never creates another session.
         public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
         {
             try
             {
                 var svc = LiveMonitorService.Instance;
 
-                if (!App.MonitorActive)
-                {
-                    // Start fresh monitor session
-                    svc.Start(data.Application);
-                    App.MonitorActive = true;
-                    App.RefreshMonitorButton();
-                }
-                else
-                {
-                    // Monitor already running — check if panel is visible
-                    if (!ClashRadarPanel.IsVisible)
-                    {
-                        // Panel was closed — just re-wire and show it, no restart needed
-                        svc.RewirePanel();
-                        // Don't toggle MonitorActive; session continues
-                    }
-                    else
-                    {
-                        // Panel visible and button clicked again — stop the monitor
-                        svc.Stop();
-                        App.MonitorActive = false;
-                        App.RefreshMonitorButton();
-                    }
-                }
+                if(!svc.IsRunning)svc.Start(data.Application);
+                else svc.RewirePanel();
+                App.MonitorActive=svc.Mode!=MonitorMode.Off;
+                App.RefreshMonitorButton();
                 return Result.Succeeded;
             }
             catch (Exception ex) { msg = ex.Message; return Result.Failed; }

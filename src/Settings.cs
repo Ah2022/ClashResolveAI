@@ -27,7 +27,8 @@ namespace ClashResolveAI
         [JsonIgnore] public ScanMode EffectiveMode { get; set; } = ScanMode.HardOnly;
         public int FullScanSliceMilliseconds { get; set; } = 40;
         public int LiveSliceMilliseconds { get; set; } = 25;
-        public int LiveDebounceMilliseconds { get; set; } = 350;
+        public int LiveDebounceMilliseconds { get; set; } = 500;
+        public int LiveMaximumSliceMilliseconds { get; set; } = 100;
         public bool ScanWithinLinks { get; set; } = true;
         public bool IncludeLinkToLink { get; set; } = false;
         public bool TrackEditedElements { get; set; } = true;

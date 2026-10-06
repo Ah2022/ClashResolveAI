@@ -27,6 +27,10 @@ namespace ClashResolveAI.Core
         private static readonly ElementRevisionStore Revisions=new ElementRevisionStore();
         private static readonly Dictionary<string,HashSet<long>> Inputs=new Dictionary<string,HashSet<long>>();
         private static bool _completeScope;
+        private static long _startRevision;
+        private static string _startEnvironment="";
+        public static string BusyDocumentKey=>_documentKey;
+        public static long StartRevision=>_startRevision;
         public static void Observe(Document doc)
         {
             string key=DocumentSession.Key(doc);if(Inputs.ContainsKey(key))return;
@@ -35,6 +39,9 @@ namespace ClashResolveAI.Core
                 .Concat(new FilteredElementCollector(doc).OfClass(typeof(Family)).ToElementIds().Select(id=>id.Value))
                 .Concat(new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).ToElementIds().Select(id=>id.Value)));
         }
+        public static long DocumentRevision(string key)=>Revisions.DocumentRevision(key);
+        public static long InputRevision(string key)=>Revisions.InputRevision(key);
+        public static bool IsStale(LiveMonitor.LiveClashDto row)=>Revisions.Required(row.HostDocumentKey,row.ElementAId,row.LinkInstanceA,row.ElementBId,row.LinkInstanceB)>row.GeometryRevision;
         public static bool InputsStale => Revisions.InputsStale(DocumentSession.CurrentKey);
         public static bool FullResultsStale => Revisions.FullResultsStale(DocumentSession.CurrentKey);
         public static bool IsInput(string key,long id)=>Inputs.TryGetValue(key,out var ids)&&ids.Contains(id);
@@ -52,16 +59,20 @@ namespace ClashResolveAI.Core
             _timer=new System.Windows.Threading.DispatcherTimer { Interval=TimeSpan.FromMilliseconds(10) };
             _timer.Tick+=(_,__)=>{if(_job!=null)_event?.Raise();};
             app.ControlledApplication.DocumentChanged+=(_,e)=>{
-                var doc=e.GetDocument();if(doc.IsFamilyDocument||doc.IsLinked)return;
+                var doc=e.GetDocument();if(doc.IsFamilyDocument)return;
                 if(ModelChangePolicy.IsViewOnly(e.GetTransactionNames()))return;
-                Observe(doc);string key=DocumentSession.Key(doc);
+                string key=DocumentSession.Key(doc);
+                if(doc.IsLinked){Revisions.Changed(key,e.GetAddedElementIds().Concat(e.GetModifiedElementIds()).Concat(e.GetDeletedElementIds()).Select(id=>id.Value),true);return;}
+                Observe(doc);
                 var all=e.GetAddedElementIds().Concat(e.GetModifiedElementIds()).Concat(e.GetDeletedElementIds()).ToList();
-                bool inputs=all.Any(id=>Inputs[key].Contains(id.Value)||doc.GetElement(id) is ElementType||doc.GetElement(id) is Family||doc.GetElement(id) is Level||doc.GetElement(id) is RevitLinkInstance);
-                foreach(var id in all)if(doc.GetElement(id) is ElementType||doc.GetElement(id) is Family||doc.GetElement(id) is Level||doc.GetElement(id) is RevitLinkInstance)Inputs[key].Add(id.Value);
+                bool inputs=all.Any(id=>Inputs[key].Contains(id.Value)||doc.GetElement(id) is ElementType||doc.GetElement(id) is Family||doc.GetElement(id) is Level||doc.GetElement(id) is RevitLinkInstance||doc.GetElement(id) is ProjectLocation||doc.GetElement(id) is BasePoint);
+                foreach(var id in all)if(doc.GetElement(id) is ElementType||doc.GetElement(id) is Family||doc.GetElement(id) is Level||doc.GetElement(id) is RevitLinkInstance||doc.GetElement(id) is ProjectLocation||doc.GetElement(id) is BasePoint)Inputs[key].Add(id.Value);
                 ScanSessionCache.Changed(doc,all);
                 var scope=ScanSessionCache.Filter(doc,AppSettings.Load());
                 var ids=e.GetAddedElementIds(scope).Concat(e.GetModifiedElementIds(scope)).Where(id=>!(doc.GetElement(id) is ElementType)).Concat(e.GetDeletedElementIds()).Select(id=>id.Value).ToList();
-                if(ids.Count==0&&!inputs)return;
+                if(all.Count==0&&!inputs)return;
+                // Advance document revision for every model transaction, but
+                // only supported geometry IDs belong in the dirty-result set.
                 Revisions.Changed(key,ids,inputs);
                 if(_job!=null&&key==_documentKey)Cancel("Model changed during scan. Run the scan again.");
                 if(LiveMonitor.ClashRadarPanel.IsVisible)LiveMonitor.ClashRadarPanel.Instance.NotifyGeometryChanged();
@@ -76,6 +87,8 @@ namespace ClashResolveAI.Core
         {
             Cancel("Replaced by a newer scan.");
             _documentKey=DocumentSession.Key(doc);_job=job;
+            _startRevision=DocumentRevision(_documentKey);_startEnvironment=LiveMonitor.LiveEnvironment.Capture(doc);
+            LiveMonitor.LiveMonitorService.Instance.FullScanStarted(_documentKey,_startRevision);
             _completeScope=completeScope;
             _done=done;_progress=progress;_failed=failed;_nextProgress=DateTime.MinValue;
             _timer?.Start();_event?.Raise();
@@ -84,7 +97,7 @@ namespace ClashResolveAI.Core
         {
             _timer?.Stop();
             var job=_job;var failed=_failed;_job=null;_done=null;_progress=null;_failed=null;
-            if(job!=null){job.Dispose();failed?.Invoke(reason);}
+            if(job!=null){job.Dispose();LiveMonitor.LiveMonitorService.Instance.FullScanEnded(null,_documentKey,false,_completeScope,null,DocumentRevision(_documentKey));failed?.Invoke(reason);}
         }
         public static void Shutdown()
         { Cancel("Revit closing.");_timer?.Stop();_timer=null;_event?.Dispose();_event=null;ScanSessionCache.Clear(); }
@@ -94,20 +107,30 @@ namespace ClashResolveAI.Core
             if(app.ActiveUIDocument==null||DocumentSession.Key(app.ActiveUIDocument.Document)!=_documentKey){Cancel("Active project changed.");return;}
             try {
                 var job=_job;
+                if(DocumentRevision(_documentKey)!=_startRevision||LiveMonitor.LiveEnvironment.Capture(app.ActiveUIDocument.Document)!=_startEnvironment){Cancel("Full Scan inputs changed; pending live changes retained.");return;}
                 bool done=job.Advance(Math.Max(10,Math.Min(50,LiveMonitor.LiveMonitorService.Instance.HasPendingWork?10:AppSettings.Load().FullScanSliceMilliseconds)));
                 if(done||DateTime.UtcNow>=_nextProgress)
                 { _progress?.Invoke(job.Statistics.Summary); _nextProgress=DateTime.UtcNow.AddMilliseconds(250); }
                 if(!done)return;
                 _timer?.Stop();
                 var callback=_done;var failure=_failed;_job=null;_done=null;_progress=null;_failed=null;
-                foreach(var c in job.Results)c.GeometryRevision=Revision;
+                foreach(var c in job.Results)c.GeometryRevision=_startRevision;
+                bool successful=false;
+                string completedKey=_documentKey;
+                long completedRevision=_startRevision;
+                bool completeScope=_completeScope;
                 try {
+                    var currentDoc=app.ActiveUIDocument.Document;
+                    if(DocumentRevision(completedKey)!=completedRevision||LiveMonitor.LiveEnvironment.Capture(currentDoc)!=_startEnvironment)
+                        throw new InvalidOperationException("Full Scan inputs changed; pending live changes retained. Run Full Scan again.");
                     callback?.Invoke(job.Results,job.Statistics);
+                    if(DocumentRevision(completedKey)!=completedRevision)throw new InvalidOperationException("Model changed during Full Scan publication.");
                     var doc=app.ActiveUIDocument.Document;
-                    Revisions.CheckedScope(_documentKey,id=>job.Statistics.Scope.CoversHost(id)||(_completeScope&&doc.GetElement(new ElementId(id))==null),_completeScope);
+                    successful=job.Statistics.MissingGeometry==0&&job.Statistics.BooleanFailures==0&&job.Statistics.Unverified==0;
+                    Revisions.CheckedScope(_documentKey,id=>job.Statistics.Scope.IsHostReliable(id)||(_completeScope&&doc.GetElement(new ElementId(id))==null),_completeScope&&successful);
                     if(LiveMonitor.ClashRadarPanel.IsVisible)LiveMonitor.ClashRadarPanel.Instance.NotifyGeometryChanged();
-                    LiveMonitor.LiveSessionLedger.Store.Checked(_documentKey,new HashSet<long>(LiveMonitor.LiveSessionLedger.Store.Entries(_documentKey).Where(e=>job.Statistics.Scope.CoversHost(e.ElementId)).Select(e=>e.ElementId)));
-                } catch(Exception ex){failure?.Invoke(ex.Message);throw;} finally { job.Dispose(); }
+                    LiveMonitor.LiveSessionLedger.Store.Checked(_documentKey,new HashSet<long>(LiveMonitor.LiveSessionLedger.Store.Entries(_documentKey).Where(e=>job.Statistics.Scope.IsHostReliable(e.ElementId)).Select(e=>e.ElementId)));
+                } catch(Exception ex){failure?.Invoke(ex.Message);throw;} finally { job.Dispose();LiveMonitor.LiveMonitorService.Instance.FullScanEnded(app.ActiveUIDocument?.Document,completedKey,successful,completeScope,job.Statistics.Scope,DocumentRevision(completedKey)); }
                 Diagnostics.Log("Scan complete: "+job.Statistics.Summary);
             }catch(Exception ex){Diagnostics.Log("Scan job failed",ex);Cancel(ex.Message);}
         }

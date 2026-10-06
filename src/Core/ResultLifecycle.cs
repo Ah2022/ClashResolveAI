@@ -9,6 +9,7 @@ namespace ClashResolveAI.Core
     public sealed class ScanScope
     {
         private readonly string _document;
+        private readonly HashSet<long> _unreliableHost=new HashSet<long>();
         private readonly HashSet<string> _missingPairs=new HashSet<string>();
         private readonly Dictionary<string,HashSet<long>> _sources=new Dictionary<string,HashSet<long>>();
         private readonly Dictionary<string,HashSet<string>> _targets=new Dictionary<string,HashSet<string>>();
@@ -21,10 +22,15 @@ namespace ClashResolveAI.Core
         }
         private bool Covers(long id,string link,string target)=>_sources.TryGetValue(link,out var ids)&&ids.Contains(id)&&_targets[link].Contains(target);
         public void MissingPair(string key)=>_missingPairs.Add(key);
+        public void MissingSource(long id,string link){if(link=="")_unreliableHost.Add(id);}
+        public bool IsHostReliable(long id)=>CoversHost(id)&&!_unreliableHost.Contains(id);
+        private bool ReliableCovers(long id,string link,string target)=>(link!=""||!_unreliableHost.Contains(id))&&Covers(id,link,target);
+        public bool ContainsPair(string document,long a,string linkA,long b,string linkB,string legacyKey)=>
+            !_missingPairs.Contains(legacyKey)&&(_document==""||_document==document)&&
+            (ReliableCovers(a,linkA,linkB)||ReliableCovers(b,linkB,linkA));
         public bool CoversHost(long id)=>_sources.TryGetValue("",out var ids)&&ids.Contains(id);
         public bool IsReliable(ClashResult c)=>!_missingPairs.Contains(c.NormalizedKey);
-        public bool Contains(ClashResult c)=>IsReliable(c)&&(_document==""||c.HostDocumentKey==_document)&&
-            (Covers(c.ElementAId,c.LinkInstanceA,c.LinkInstanceB)||Covers(c.ElementBId,c.LinkInstanceB,c.LinkInstanceA));
+        public bool Contains(ClashResult c)=>ContainsPair(c.HostDocumentKey,c.ElementAId,c.LinkInstanceA,c.ElementBId,c.LinkInstanceB,c.NormalizedKey);
     }
     public sealed class MergeOutcome
     {

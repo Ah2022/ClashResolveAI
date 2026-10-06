@@ -52,6 +52,8 @@ namespace ClashResolveAI.Core
             if(DateTime.UtcNow<_next)return;
             try
             {
+                if(_step>=700){ReleaseStep(app);return;}
+                if(_step==0&&Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_RELEASE")=="1"){_step=700;ReleaseStep(app);return;}
                 if(_step>=500){Phase5Step(app);return;}
                 if(_step>=400){LedgerStep(app);return;}
                 if (_step == 0)
@@ -77,26 +79,35 @@ namespace ClashResolveAI.Core
                     Check(File.Exists(snapshots.Path3D) && File.Exists(snapshots.Path2D), "2D and 3D snapshots exported");
                     LiveMonitorService.Instance.Start(app);
                     RadarDataStore.Instance.Clear();
-                    // Keep a full job active across callbacks: the monitor must
-                    // still service selection before global work completes.
+                    // Live work must pause while Full Scan owns API time, preserving selection changes.
                     IEnumerable<int> LongScan(){while(true)yield return 0;}
                     ScanCoordinator.StartJob(_test!,new ClashEngine.ScanJob(LongScan(),new List<ClashResult>(),new ClashEngine.ScanStatistics()),(_,__)=>{});
                     app.ActiveUIDocument.Selection.SetElementIds(new[] { _moving! });
                     LiveMonitorService.Instance.CheckCurrentSelection();
-                    _step = 1; _next = DateTime.UtcNow.AddSeconds(3);
+                    _step = 11; _next = DateTime.UtcNow.AddSeconds(3);
+                }
+                else if(_step==11)
+                {
+                    Check(ScanCoordinator.Busy&&RadarDataStore.Instance.ActiveCount==0,"Live work pauses while Full Scan owns API time");
+                    ScanCoordinator.Cancel("Verification interrupted Full Scan");
+                    ScanCoordinator.Start(_test!,"",null,(rows,stats)=>Dashboard.ClashDashboard.Instance.MergeFullScan(rows,stats.Mode,stats.Scope));
+                    _step=12;_next=DateTime.UtcNow.AddSeconds(3);
+                }
+                else if(_step==12)
+                {
+                    if(ScanCoordinator.Busy){_next=DateTime.UtcNow.AddSeconds(1);return;}
+                    _step=1;_next=DateTime.UtcNow.AddSeconds(3);
                 }
                 else if (_step == 1)
                 {
                     Check(RadarDataStore.Instance.ActiveCount >= 3, "Live selection detects host plus repeated linked instances");
-                    Check(ScanCoordinator.Busy,"Live selection publishes while a full scan is still running");
-                    ScanCoordinator.Cancel("Verification background scan finished.");
+                    Check(!ScanCoordinator.Busy,"Live work resumes only after Full Scan completes");
                     var inspected=RadarDataStore.Instance.GetActive().First();
-                    var scene=Inspection.InspectionGeometry.Build(_test!,inspected,20);
+                    var scene=Inspection.InspectionGeometry.Build(_test!,LiveClashResolver.Resolve(_test!,inspected),20);
                     Check(scene.Meshes.Any(m=>m.Role==0)&&scene.Meshes.Any(m=>m.Role==1)&&scene.HasOverlap,"Interactive inspection extracts both elements and the real overlap mesh");
                     ClashRadarPanel.Instance.VerifyInspectorLayout(inspected,scene,_folder);
                     Check(true,"Responsive grid, full-height inspector, 3-up floating view and redocking work");
-                    var pin=new Inspection.InspectionHandler { Pending=inspected,PinScene=scene,PinPreferences=new Inspection.InspectorPreferences {Context=false} };
-                    pin.Execute(app);
+                    Inspection.InspectionHandler.Run(app,LiveClashResolver.Resolve(_test!,inspected),scene,new Inspection.InspectorPreferences {Context=false});
                     Check(new FilteredElementCollector(_test!).OfClass(typeof(View3D)).Cast<View3D>().Any(v=>v.Name.StartsWith("Clash_"+inspected.ClashId+"_")),"Pin action creates a saved 3D inspection view");
                     using (var tx = new Transaction(_test!, "ClashResolve — Verification model move"))
                     { tx.Start(); ElementTransformUtils.MoveElement(_test!, _moving!, new XYZ(100, 0, 0)); tx.Commit(); }
@@ -136,7 +147,7 @@ namespace ClashResolveAI.Core
                 {
                     Check(RadarDataStore.Instance.ActiveCount==0,"Restarted monitor clears deleted placement without user input");
                     LiveMonitorService.Instance.Stop();
-                    new ClashRefreshHandler().Execute(app);
+                    LiveMonitorService.Instance.RequestScan(LiveScanAction.Ledger);LiveMonitorService.Instance.ExecuteQueued(app);
                     _step=5;_next=DateTime.UtcNow.AddSeconds(1);
                 }
                 else if(_step==5)

@@ -61,11 +61,13 @@ Restart Revit. Open **MEP AI Tools → ClashResolve AI 9.4**. If Revit displays 
 
 ### 2. Monitor while modelling
 
-1. Click **Live Monitor** to start; review its results in **Clash Radar**.
-2. Select, place, or edit supported host elements. Local checks update the affected live results.
-3. Use **Re-check drawn** to recheck the current session's tracked elements. This does not run a project-wide Full Scan.
-4. Use Radar's result-type and session filters to control what you see. Stopping and restarting monitoring begins a new live session.
-5. Click **Live Monitor** again to stop.
+1. Click **Live Monitor** to create a session for the active host document and open the dockable **Clash Radar**.
+2. Choose **Live** for automatic local checks after a 300–700 ms debounce, **Trigger** to accumulate edits until **Check Changes**, or **Off** to stop processing changes and clear queued work.
+3. Place or edit supported host elements. Checks compare affected sources with nearby host elements and configured loaded links, then reconcile new and resolved issues by stable identity.
+4. Review scan status, queue depth and the **Diagnostics** expander. Export diagnostic snapshots when investigating performance or stale requests.
+5. Run **Full Scan** when Radar requests it. A successful current Full Scan renews the session generation and resumes pending local work. Responsiveness protection requires an explicit recheck.
+
+Radar stores immutable snapshots. Navigation and inspection validate the current document, session, element UniqueIds, geometry revisions and linked environment before resolving Revit elements. Stale snapshots cannot be used to inspect or navigate old geometry.
 
 Live monitoring is intentionally local. A type edit can recheck up to 500 in-scope instances. Larger type edits and changes such as levels or links show a **Full Scan needed** notice instead of silently scanning the entire model. Clearing local work does not remove the need to refresh Dashboard.
 
@@ -77,7 +79,7 @@ Keep API keys, settings, models, result databases, and exported project reports 
 
 ## Validation and known limits
 
-Version 9.4 passed **84 standalone checks**, **136 in-Revit integration checks**, the WPF inspector harness, and BCF schema validation during release verification. The production-copy comparison preserved all **1,419 baseline result identities**, including **28 hard clashes**. Hard-only retained those 28 hard clashes and 9 unverified Boolean-failure pairs with no surface-distance calls.
+The October 6 Live Monitor upgrade passed **223 automated checks** across identity/diagnostics, scheduler/resolver/view-model, gateway and WPF Radar harnesses. Native verification and remaining acceptance limits are recorded in [the release verification report](docs/LIVE_MONITOR_9_4_VERIFICATION.md). Earlier October 1 results (84 standalone and 136 native checks, plus a 1,419-result production comparison) describe the previous build and are not evidence for this upgrade.
 
 Interactive multi-segment drawing, automatically created fittings, live link transform/unload behavior, material/diameter type edits, and exactly 500 affected instances were not separately verified. Scripted pipe placements, Undo/Redo, and type edits affecting 2 and 501 instances were exercised. See [testing documentation](docs/TESTING.md) for reproducible checks and evidence limits.
 

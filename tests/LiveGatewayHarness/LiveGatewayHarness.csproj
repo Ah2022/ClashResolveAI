@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/LiveMonitor/ChangeAccumulator.cs" Link="ChangeAccumulator.cs" />
+    <Compile Include="../../src/LiveMonitor/LiveDiagnostics.cs" Link="LiveDiagnostics.cs" />
+    <Compile Include="..\..\src\LiveMonitor\MonitorMode.cs" Link="MonitorMode.cs" />
+    <Compile Include="..\..\src\LiveMonitor\LiveRequestQueue.cs" Link="LiveRequestQueue.cs" />
+    <Compile Include="..\..\src\LiveMonitor\RevitLiveMonitorGateway.cs" Link="RevitLiveMonitorGateway.cs" />
+  </ItemGroup>
+</Project>
