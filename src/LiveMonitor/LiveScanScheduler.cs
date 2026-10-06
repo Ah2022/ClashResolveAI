@@ -144,9 +144,18 @@ namespace ClashResolveAI.LiveMonitor
             var state=Get(key);
             var apiSlice=Stopwatch.StartNew();
             try {
-                string environment=LiveEnvironment.Capture(doc);state.NextPoll=DateTime.UtcNow.AddSeconds(1);
-                if(state.Environment!=""&&state.Environment!=environment)RequireFullScan(key,"Rules or loaded-link inputs changed; Full Scan required");
-                state.Environment=environment;
+                // Input validation can cost more than the preferred scan slice
+                // on large hosts. Poll once per second, so the next callback
+                // can advance geometry rather than repeatedly exhausting its
+                // budget on the same input fingerprint. Publication below
+                // still validates fresh inputs before exposing any results.
+                if(state.Environment==""||DateTime.UtcNow>=state.NextPoll) {
+                    string current=LiveEnvironment.Capture(doc);
+                    state.NextPoll=DateTime.UtcNow.AddSeconds(1);
+                    if(state.Environment!=""&&state.Environment!=current)RequireFullScan(key,"Rules or loaded-link inputs changed; Full Scan required");
+                    state.Environment=current;
+                }
+                string environment=state.Environment;
                 if(ScanCoordinator.InputsStale)RequireFullScan(key,"Model inputs changed; Full Scan required");
                 if(!Dispatchable(key)||!state.Policy.CanRun||state.Failures>=3||DateTime.UtcNow<state.NextWork||doc.IsReadOnly)return;
                 if(_job!=null&&(_batch!.SessionGeneration!=generation||_revision!=ScanCoordinator.DocumentRevision(key)||_stamp!=environment))
@@ -183,7 +192,7 @@ namespace ClashResolveAI.LiveMonitor
                 if(Protect(key,apiSlice.Elapsed.TotalMilliseconds))return;
                 state.NextWork=DateTime.UtcNow.AddMilliseconds(25);
                 if(!done){if(DateTime.UtcNow>=_nextStatus){SetStatus(key,LiveScanOutcome.Checking,$"Checking {_checked.Count} elements · {_job.Statistics.Tested} pairs tested");_nextStatus=DateTime.UtcNow.AddMilliseconds(250);}return;}
-                if(!LiveMonitorService.Instance.IsCurrent(key,generation)||_revision!=ScanCoordinator.DocumentRevision(key)||_stamp!=LiveEnvironment.Capture(doc)){Abort(key,LiveScanOutcome.Superseded,"Completion superseded; batch restored");return;}
+                if(!LiveMonitorService.Instance.IsCurrent(key,generation)||_revision!=ScanCoordinator.DocumentRevision(key)){Abort(key,LiveScanOutcome.Superseded,"Completion superseded; batch restored");return;}
                 LastStatistics=_job.Statistics;
                 // DTO capture is API work too. Publish only after all rows have
                 // been captured over budgeted callbacks and revalidated.
@@ -194,6 +203,10 @@ namespace ClashResolveAI.LiveMonitor
                     if(Protect(key,apiSlice.Elapsed.TotalMilliseconds))return;
                 }
                 if(_captureIndex<_job.Results.Count){SetStatus(key,LiveScanOutcome.Checking,"Preparing verified results");return;}
+                // Validate only after budgeted DTO capture is complete. Doing
+                // this before capture on every callback can starve capture too.
+                if(_stamp!=LiveEnvironment.Capture(doc)){RequireFullScan(key,"Rules or loaded-link inputs changed; Full Scan required");return;}
+                if(Protect(key,apiSlice.Elapsed.TotalMilliseconds))return;
                 var results=_staged.ToList();
                 var coverage=_job.Statistics.Scope;var mode=_job.Statistics.Mode;
                 bool Covered(LiveClashDto row) {

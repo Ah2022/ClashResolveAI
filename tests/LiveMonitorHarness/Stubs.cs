@@ -66,7 +66,7 @@ namespace ClashResolveAI
         public AppSettings ScanSnapshot()=>(AppSettings)MemberwiseClone();
     }
 }
-namespace ClashResolveAI.Rules {public static class RulesEngine {public static string Contents="rules";public static string CacheKey(string name)=>name+Contents;}}
+namespace ClashResolveAI.Rules {public static class RulesEngine {public static string Contents="rules";public static int CaptureDelay;public static string CacheKey(string name){if(CaptureDelay>0)Thread.Sleep(CaptureDelay);return name+Contents;}}}
 namespace ClashResolveAI.Core
 {
     public static class DocumentSession {public static string CurrentKey="host";public static string Key(Document doc)=>doc.Key;public static bool Matches(ClashResult row,Document doc)=>row.HostDocumentKey==doc.Key;}

@@ -28,7 +28,7 @@ var old=doc.Elements[1];doc.Elements[1]=new Element{Id=new(1),UniqueId="replacem
 Check(Reject(()=>LiveClashResolver.Resolve(doc,dto)),"Reused numeric IDs cannot resolve an old endpoint UniqueId");doc.Elements[1]=old;
 ClashResolveAI.Rules.RulesEngine.Contents="changed rules";
 Check(Reject(()=>LiveClashResolver.Resolve(doc,dto)),"Changed rule contents reject otherwise unchanged endpoint geometry");
-Pump();Check(scheduler.Status.RequiresFullScan,"Environment changes produce an explicit Full Scan requirement");
+Thread.Sleep(1050);Pump();Check(scheduler.Status.RequiresFullScan,"Environment polling detects changed rules and produces an explicit Full Scan requirement");
 scheduler.RequestCheck(doc,new[]{new ElementId(1)});Ready();
 Check(scheduler.Status.RequiresFullScan&&scheduler.QueueDepth(doc.Key)>0,"Manual checks cannot bypass a global completeness pause");
 long rev=ScanCoordinator.DocumentRevision(doc.Key);scheduler.FullScanStarted(doc.Key,rev);int jobs=Engine.Jobs;Record(1);Ready();
@@ -87,5 +87,12 @@ scheduler.SetMode(doc.Key,MonitorMode.Off);jobs=Engine.Jobs;Record(1);scheduler.
 Check(scheduler.QueueDepth(doc.Key)==0&&Engine.Jobs==jobs&&!scheduler.NeedsPump(doc.Key),"Off clears pending work and ignores event, check, and timer scan requests");
 scheduler.SetMode(doc.Key,MonitorMode.Live);Record(1);Ready();
 Check(Engine.Jobs>jobs&&scheduler.QueueDepth(doc.Key)==0,"Returning to Live resumes automatic checking of subsequent changes");
+ClashResolveAI.Rules.RulesEngine.CaptureDelay=15;
+Thread.Sleep(1050);Record(1);Ready();
+Check(scheduler.QueueDepth(doc.Key)==0&&scheduler.Status.Outcome==LiveScanOutcome.Completed,"Input validation longer than the scan target does not starve geometry or DTO publication");
+ClashResolveAI.Rules.RulesEngine.CaptureDelay=0;
 passed+=ViewModelChecks.Run(radar.GetActive().Single());
+Engine.Infinite=true;Record(1);Ready();
+ClashResolveAI.Rules.RulesEngine.Contents="changed while scanning";Engine.Infinite=false;Ready();
+Check(scheduler.Status.RequiresFullScan&&scheduler.QueueDepth(doc.Key)>0,"Fresh publication validation rejects inputs changed between cached polls and preserves the batch");
 Console.WriteLine($"{passed} scheduler/resolver/view-model checks passed.");
