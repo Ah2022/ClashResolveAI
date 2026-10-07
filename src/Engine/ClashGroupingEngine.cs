@@ -221,6 +221,7 @@ namespace ClashResolveAI.Engine
 
             var group = new ClashGroup
             {
+                GroupId=StableGroupKey(reason,clashes),
                 GroupTitle      = title,
                 MaxSeverity     = worstSev,
                 GroupingReason  = reason,
@@ -233,10 +234,15 @@ namespace ClashResolveAI.Engine
             };
 
             // Assign group ID to all members
-            foreach (var c in clashes)
-                c.GroupId = group.GroupId;
+            // Grouping is a projection. Filtering/exporting must not rewrite canonical issue membership.
 
             return group;
+        }
+        private static string StableGroupKey(string reason,List<ClashResult> clashes)
+        {
+            using var hash=System.Security.Cryptography.SHA256.Create();
+            string key=reason+"|"+string.Join("|",clashes.Select(c=>c.NormalizedKey).OrderBy(k=>k,StringComparer.Ordinal));
+            return BitConverter.ToString(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(key))).Replace("-", "");
         }
 
         private static string BuildGroupTitle(List<ClashResult> clashes, string reason)

@@ -15,7 +15,7 @@ namespace ClashResolveAI.Core
 {
     internal static partial class IntegrationVerification
     {
-        private static ElementId? _ledgerPipe,_ledgerSecond;
+        private static ElementId? _ledgerPipe,_ledgerSecond,_ledgerBaseline;
         private static ClashResult? _unrelated;
         private static ClashResolveAI.ClashEngine.ScanStatistics? _previousLive;
         private static int _ledgerCount;
@@ -38,7 +38,7 @@ namespace ClashResolveAI.Core
             bool Pending()=>service.HasPendingWork||ScanCoordinator.Busy;
             if(_step==400){
                 using(var tx=new Transaction(doc,"Phase4 baseline pipes")){
-                    tx.Start();NativePipe(doc,new XYZ(195,0,3),new XYZ(205,0,3));tx.Commit();
+                    tx.Start();_ledgerBaseline=NativePipe(doc,new XYZ(195,0,3),new XYZ(205,0,3)).Id;tx.Commit();
                 }
                 DocumentSession.Activate(doc);ClashDashboard.Instance.RestoreSession(new List<ClashResult>(),new ResultViewFilter());
                 ScanCoordinator.Start(doc,"",null,(rows,stats)=>ClashDashboard.Instance.MergeFullScan(rows,stats.Mode,stats.Scope));Next(401);return;
@@ -50,8 +50,11 @@ namespace ClashResolveAI.Core
             if(_step==401){
                 _unrelated=ClashDashboard.Instance.Clashes.First(c=>c.TestType==ClashTestType.HardClash);
                 app.ActiveUIDocument.Selection.SetElementIds(new ElementId[0]);
-                service.Start(app);service.ClearSession(doc);service.ExecuteQueued(app);
+                service.Start(app);service.ClearSession(doc);service.ExecuteQueued(app);Next(411);return;
+            }
+            if(_step==411){
                 LiveMonitorService.Instance.RequestScan(LiveScanAction.Ledger);LiveMonitorService.Instance.ExecuteQueued(app);
+                DrainUi(ClashRadarPanel.Instance);
                 Check(Descendants<TextBlock>(ClashRadarPanel.Instance).Any(t=>t.Text=="Nothing drawn yet"),"Empty ledger finishes with Nothing drawn yet");
                 app.Application.DocumentChanged+=RecordLedgerEvent;
                 using(var tx=new Transaction(doc,"Phase4 place segment 1")){tx.Start();_ledgerPipe=NativePipe(doc,new XYZ(200,-5,3),new XYZ(200,5,3)).Id;tx.Commit();}
@@ -83,7 +86,7 @@ namespace ClashResolveAI.Core
             }
             if(_step==404){
                 var stats=service.LastStatistics!;
-                Check(!ReferenceEquals(stats,_previousLive)&&stats.Sources==_ledgerCount&&stats.IndexedElements==0,"Re-check sources equal the live ledger count and index zero elements");
+                Check(!ReferenceEquals(stats,_previousLive)&&stats.Sources==_ledgerCount+1&&stats.IndexedElements==0&&stats.Scope.CoversHost(_ledgerBaseline!.Value)&&LiveSessionLedger.LiveIds(doc).All(id=>stats.Scope.CoversHost(id.Value)),"Re-check covers the live ledger plus its known baseline clash partner and indexes zero elements");
                 Check(!ScanCoordinator.Busy,"Ledger re-check does not start a full-model coordinator job");
                 Check(Descendants<Button>(ClashRadarPanel.Instance).Any(b=>(b.Content as string)=="Re-check session"&&b.IsEnabled),"Live completion re-enables the view-model recheck command");
                 Check(!ScanCoordinator.ResultsStale&&!LiveSessionLedger.Store.HasUnchecked(DocumentSession.Key(doc)),"Live work is current after local checks finish with no unchecked ledger IDs");

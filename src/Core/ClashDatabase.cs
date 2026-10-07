@@ -1,4 +1,4 @@
-﻿// Core/ClashDatabase.cs  — v4.0
+// Core/ClashDatabase.cs  — v4.0
 //
 // PROFESSIONAL IMPROVEMENT #12: Persistent Clash Database
 //
@@ -22,6 +22,9 @@ using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using ClashResolveAI.Dashboard.Domain;
+using ClashResolveAI.Dashboard.Persistence;
+using ClashResolveAI.ClashEngine;
 
 namespace ClashResolveAI.Core
 {
@@ -29,7 +32,7 @@ namespace ClashResolveAI.Core
     /// SQLite-backed persistent storage for clash results, groups,
     /// lifecycle history, and coordination analytics.
     /// </summary>
-    public class ClashDatabase : IDisposable
+    public class ClashDatabase : IDisposable, Dashboard.Application.IGroupCommandStore
     {
         // ── Singleton ─────────────────────────────────────────────────────
         private static ClashDatabase? _instance;
@@ -38,6 +41,10 @@ namespace ClashResolveAI.Core
 
         private SQLiteConnection? _conn;
         private string            _dbPath = "";
+        private SQLiteTransaction? _transaction;
+        private bool _publishingScan;
+        private ScanHistoryRepository? _history;
+        public ScanHistoryRepository History => _history ?? throw new InvalidOperationException("No dashboard database is open.");
 
         // ════════════════════════════════════════════════════════════════
         //  INIT / OPEN
@@ -50,6 +57,7 @@ namespace ClashResolveAI.Core
             {
                 _conn?.Dispose();
                 _conn = null;
+                _history = null;
                 string folder = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "ClashResolveAI");
@@ -60,17 +68,20 @@ namespace ClashResolveAI.Core
                 string safeName = string.Join("_",
                     projectName.Split(Path.GetInvalidFileNameChars()));
                 _dbPath = Path.Combine(folder, $"{safeName}.clash.db");
-
+                bool existed=File.Exists(_dbPath);
                 _conn = new SQLiteConnection($"Data Source={_dbPath};Version=3;");
                 _conn.Open();
-
+                _history=new ScanHistoryRepository(_conn,projectName);
+                // Backup and migrate before touching the compatibility schema.
+                _history.Initialize(_dbPath,existed);
                 CreateSchema();
+                _history.RecoverInterruptedAttempts();
                 Debug.WriteLine($"[ClashDB] Opened: {_dbPath}");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[ClashDB] Open error: {ex.Message}");
-                _conn = null;
+                _conn?.Dispose();_conn = null;_history=null;
                 Diagnostics.Log("Database could not open", ex);
                 throw;
             }
@@ -149,6 +160,7 @@ namespace ClashResolveAI.Core
             using(var cmd=_conn!.CreateCommand()){cmd.CommandText="PRAGMA table_info(Clashes)";using var r=cmd.ExecuteReader();while(r.Read())columns.Add(r.GetString(1));}
             foreach(var name in new[]{"Origin","UnverifiedReason","TestType","GeometryEvidence","LinkInstanceA","LinkInstanceB","HostDocumentKey"})
                 if(!columns.Contains(name))ExecuteNonQuery("ALTER TABLE Clashes ADD COLUMN "+name+" TEXT");
+            if(!columns.Contains("Archived"))ExecuteNonQuery("ALTER TABLE Clashes ADD COLUMN Archived INTEGER NOT NULL DEFAULT 0");
             // Indexes for performance
             ExecuteNonQuery("CREATE INDEX IF NOT EXISTS idx_clash_status ON Clashes(Status);");
             ExecuteNonQuery("CREATE INDEX IF NOT EXISTS idx_clash_severity ON Clashes(Severity);");
@@ -162,13 +174,15 @@ namespace ClashResolveAI.Core
 
         public void UpsertClash(ClashResult c)
         {
-            if (_conn == null || c == null || c.Origin != ResultOrigin.Full) return;
+            if (c == null || c.Origin != ResultOrigin.Full) return;
+            if (_conn == null) throw new InvalidOperationException("No dashboard database is open.");
+            if(_transaction==null){Atomic(()=>UpsertClash(c));return;}
             try
             {
                 string metaJson = JsonConvert.SerializeObject(c.Metadata);
 
                 ExecuteNonQuery(@"
-                    INSERT OR REPLACE INTO Clashes
+                    INSERT INTO Clashes
                     (ClashId, GroupId, DetectedAt, ElementAId, ElementBId,
                      DisciplineA, DisciplineB, ClashType, Severity, Status,
                      GapMM, OverlapVolMM3, ClashPoint, LevelName, GridRef,
@@ -181,7 +195,16 @@ namespace ClashResolveAI.Core
                      @gap, @vol, @pt, @lv, @gr,
                      @zone, @pri, @mdisc, @rule,
                      @ai, @rfi, @lfa, @lfb,
-                     @meta, @upd, @test, @evidence, @lia, @lib, @host, @reason, @origin)",
+                     @meta, @upd, @test, @evidence, @lia, @lib, @host, @reason, @origin)
+                    ON CONFLICT(ClashId) DO UPDATE SET
+                     GroupId=excluded.GroupId,DetectedAt=excluded.DetectedAt,ElementAId=excluded.ElementAId,ElementBId=excluded.ElementBId,
+                     DisciplineA=excluded.DisciplineA,DisciplineB=excluded.DisciplineB,ClashType=excluded.ClashType,Severity=excluded.Severity,Status=excluded.Status,
+                     GapMM=excluded.GapMM,OverlapVolMM3=excluded.OverlapVolMM3,ClashPoint=excluded.ClashPoint,LevelName=excluded.LevelName,
+                     GridRef=excluded.GridRef,ZoneName=excluded.ZoneName,Priority=excluded.Priority,MovingDisc=excluded.MovingDisc,RuleApplied=excluded.RuleApplied,
+                     AiSuggestion=excluded.AiSuggestion,RfiText=excluded.RfiText,LinkFileA=excluded.LinkFileA,LinkFileB=excluded.LinkFileB,
+                     MetadataJson=excluded.MetadataJson,UpdatedAt=excluded.UpdatedAt,TestType=excluded.TestType,GeometryEvidence=excluded.GeometryEvidence,
+                     LinkInstanceA=excluded.LinkInstanceA,LinkInstanceB=excluded.LinkInstanceB,HostDocumentKey=excluded.HostDocumentKey,
+                     UnverifiedReason=excluded.UnverifiedReason,Origin=excluded.Origin,Archived=0",
                     ("@origin",c.Origin.ToString()),
                     ("@reason",c.UnverifiedReason.ToString()),
                     ("@test",c.TestType.ToString()),("@evidence",c.GeometryEvidence),("@lia",c.LinkInstanceA),("@lib",c.LinkInstanceB),("@host",c.HostDocumentKey),
@@ -197,7 +220,7 @@ namespace ClashResolveAI.Core
                     ("@status", c.Status.ToString()),
                     ("@gap",    c.GapMM),
                     ("@vol",    c.OverlapVolumeMM3),
-                    ("@pt",     $"{c.ClashPoint.X:F3},{c.ClashPoint.Y:F3},{c.ClashPoint.Z:F3}"),
+                    ("@pt",     string.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:R},{1:R},{2:R}",c.ClashPoint.X,c.ClashPoint.Y,c.ClashPoint.Z)),
                     ("@lv",     c.LevelName),
                     ("@gr",     c.GridRef),
                     ("@zone",   c.ZoneName),
@@ -209,7 +232,8 @@ namespace ClashResolveAI.Core
                     ("@lfa",    c.LinkFileA),
                     ("@lfb",    c.LinkFileB),
                     ("@meta",   metaJson),
-                    ("@upd",    DateTime.Now.ToString("o")));
+                    ("@upd",    DateTime.UtcNow.ToString("o")));
+                if(!_publishingScan)History.UpsertCurrent(ClashObservationAdapter.Capture(c),_transaction);
             }
             catch (Exception ex)
             {
@@ -220,10 +244,7 @@ namespace ClashResolveAI.Core
 
         public void DeleteClashes(IEnumerable<string> ids)
         {
-            if(_conn==null)return;
-            using var tx=_conn.BeginTransaction();
-            foreach(var id in ids){ExecuteNonQuery("DELETE FROM ClashRevisions WHERE ClashId=@id",("@id",id));ExecuteNonQuery("DELETE FROM Clashes WHERE ClashId=@id",("@id",id));}
-            tx.Commit();
+            Atomic(()=>{foreach(var id in ids){History.ArchiveCurrent(id,_transaction!);ExecuteNonQuery("UPDATE Clashes SET Archived=1 WHERE ClashId=@id",("@id",id));}});
         }
 
         public void RestoreLifecycles(IEnumerable<ClashResult> clashes)
@@ -235,9 +256,9 @@ namespace ClashResolveAI.Core
             using var reader=cmd.ExecuteReader();
             while(reader.Read()) {
                 if(!wanted.TryGetValue(reader.GetString(0),out var c))continue;
-                if(Enum.TryParse(reader.GetString(1),out ClashStatus status))c.Status=status==ClashStatus.Resolved?ClashStatus.Active:status;
+                if(Enum.TryParse(reader.GetString(1),out ClashStatus status))c.Status=status;
                 if(!reader.IsDBNull(2))c.Metadata=JsonConvert.DeserializeObject<ClashMetadata>(reader.GetString(2))??new ClashMetadata();
-                if(!reader.IsDBNull(3)&&DateTime.TryParse(reader.GetString(3),out var date))c.DetectedAt=date;
+                if(!reader.IsDBNull(3)&&DateTime.TryParse(reader.GetString(3),System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.RoundtripKind,out var date))c.DetectedAt=date;
                 if(!reader.IsDBNull(4))c.AiSuggestion=reader.GetString(4);
                 if(!reader.IsDBNull(5))c.RfiText=reader.GetString(5);
             }
@@ -251,9 +272,9 @@ namespace ClashResolveAI.Core
             using var reader = cmd.ExecuteReader();
             if (!reader.Read()) return;
             if (Enum.TryParse(reader.GetString(0), out ClashStatus status))
-                clash.Status = status == ClashStatus.Resolved ? ClashStatus.Active : status;
+                clash.Status = status;
             if (!reader.IsDBNull(1)) clash.Metadata = JsonConvert.DeserializeObject<ClashMetadata>(reader.GetString(1)) ?? new ClashMetadata();
-            if (!reader.IsDBNull(2) && DateTime.TryParse(reader.GetString(2), out var first)) clash.DetectedAt = first;
+            if (!reader.IsDBNull(2) && DateTime.TryParse(reader.GetString(2),System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.RoundtripKind,out var first)) clash.DetectedAt = first;
             if (!reader.IsDBNull(3)) clash.AiSuggestion = reader.GetString(3);
             if (!reader.IsDBNull(4)) clash.RfiText = reader.GetString(4);
         }
@@ -261,84 +282,92 @@ namespace ClashResolveAI.Core
         /// <summary>Bulk insert clash results (uses a transaction for performance).</summary>
         public void BulkInsertClashes(IEnumerable<ClashResult> clashes)
         {
-            if (_conn == null) return;
-            using (var tx = _conn.BeginTransaction())
-            {
-                try
-                {
-                    foreach (var c in clashes)
-                        UpsertClash(c);
-                    tx.Commit();
-                }
-                catch (Exception ex)
-                {
-                    tx.Rollback();
-                    Diagnostics.Log("Database transaction failed", ex);
-                    throw;
-                }
-            }
+            Atomic(()=>{foreach(var c in clashes)UpsertClash(c);});
+        }
+
+        public List<ClashResult> LoadCurrentClashes() => History.GetCurrent().Select(ClashObservationAdapter.Restore).ToList();
+        public void UpdateClashStatuses(IEnumerable<string> ids,ClashStatus status,string author,string comment)
+        {new Dashboard.Application.LifecycleCommandService(this).ChangeStatus(ids,status,author,comment);}
+
+        public void CommitFullScan(ScanStatistics stats,IReadOnlyList<ClashResult> rows,IReadOnlyList<ClashObservation> observations,IReadOnlyList<GroupScanRevision> groups)
+        {
+            if(string.IsNullOrEmpty(stats.ScanId))throw new InvalidOperationException("Full Scan has no persisted attempt identity.");
+            Atomic(()=> {
+                _publishingScan=true;
+                try {
+                    History.PrepareGroups(stats.ScanId,groups,observations,_transaction!);
+                    var observationMap=observations.ToDictionary(o=>o.ClashId);
+                    foreach(var row in rows){row.Metadata=JsonConvert.DeserializeObject<ClashMetadata>(observationMap[row.ClashId].MetadataJson)!;UpsertClash(row);}
+                    string completeness=stats.MissingGeometry==0&&stats.BooleanFailures==0&&stats.Unverified==0?"VerifiedWithinScope":"CompletedWithUncertainty";
+                    History.CompleteScan(stats.ScanId,observations,groups,JsonConvert.SerializeObject(stats),JsonConvert.SerializeObject(stats.Scope.Snapshot()),completeness,_transaction!);
+                } finally {_publishingScan=false;}
+            });
+        }
+
+        private void Atomic(Action action)
+        {
+            if(_conn==null)throw new InvalidOperationException("No dashboard database is open.");
+            if(_transaction!=null){action();return;}
+            using var tx=_conn.BeginTransaction();_transaction=tx;
+            try {action();tx.Commit();} catch {tx.Rollback();throw;} finally {_transaction=null;}
         }
 
         // ════════════════════════════════════════════════════════════════
         //  UPDATE STATUS  — lifecycle transition with revision log
         // ════════════════════════════════════════════════════════════════
 
-        public void UpdateClashStatus(
-            string clashId, ClashStatus newStatus,
-            string author = "", string comment = "")
+        public void UpdateClashStatus(string clashId,ClashStatus newStatus,string author="",string comment="")
+        {new Dashboard.Application.LifecycleCommandService(this).ChangeStatus(new[]{clashId},newStatus,author,comment);}
+
+        public ClashObservation? ReadCurrentIssue(string id)=>History.FindCurrent(id);
+        public void CommitMutations(IReadOnlyList<IssueMutation> mutations)
         {
-            if (_conn == null) return;
-            try
-            {
-                // Get current status for revision log
-                var oldStatusStr = ExecuteScalar(
-                    "SELECT Status FROM Clashes WHERE ClashId=@id",
-                    ("@id", clashId)) as string ?? "New";
-                ClashStatus.TryParse(oldStatusStr, out ClashStatus oldStatus);
-
-                // Update status
-                ExecuteNonQuery(
-                    "UPDATE Clashes SET Status=@s, UpdatedAt=@u WHERE ClashId=@id",
-                    ("@s",  newStatus.ToString()),
-                    ("@u",  DateTime.Now.ToString("o")),
-                    ("@id", clashId));
-
-                // Log revision
-                ExecuteNonQuery(@"
-                    INSERT INTO ClashRevisions (ClashId, Timestamp, Author, OldStatus, NewStatus, Comment)
-                    VALUES (@cid, @ts, @auth, @old, @new, @cmt)",
-                    ("@cid",  clashId),
-                    ("@ts",   DateTime.Now.ToString("o")),
-                    ("@auth", author),
-                    ("@old",  oldStatus.ToString()),
-                    ("@new",  newStatus.ToString()),
-                    ("@cmt",  comment));
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ClashDB] UpdateStatus error: {ex.Message}");
-            }
+            Atomic(()=> {
+                foreach(var mutation in mutations) {
+                    var current=History.FindCurrent(mutation.Snapshot.ClashId)??throw new InvalidOperationException("Issue is no longer current.");
+                    if(current.Status!=mutation.ExpectedStatus||current.MetadataJson!=mutation.ExpectedMetadataJson)throw new InvalidOperationException("Issue changed while the command was being prepared. Refresh and retry.");
+                }
+                foreach(var mutation in mutations) {
+                    var row=mutation.Snapshot;UpsertClash(ClashObservationAdapter.Restore(row));
+                    string timestamp=DateTime.UtcNow.ToString("o");
+                    History.AppendEvent(new ClashLifecycleEvent {EventId=Guid.NewGuid().ToString("N"),ClashId=row.ClashId,FromStatus=mutation.ExpectedStatus,ToStatus=row.Status,
+                        Origin=mutation.Origin,Author=mutation.Author,Timestamp=timestamp,Comment=mutation.Reason},_transaction);
+                    if(mutation.ExpectedStatus!=row.Status)ExecuteNonQuery("INSERT INTO ClashRevisions (ClashId,Timestamp,Author,OldStatus,NewStatus,Comment) VALUES(@id,@utc,@author,@old,@new,@reason)",
+                        ("@id",row.ClashId),("@utc",timestamp),("@author",mutation.Author),("@old",mutation.ExpectedStatus),("@new",row.Status),("@reason",mutation.Reason));
+                }
+            });
         }
-
-        // ════════════════════════════════════════════════════════════════
-        //  UPSERT GROUP
-        // ════════════════════════════════════════════════════════════════
-
-        public void UpsertGroup(ClashGroup g)
+        public Dashboard.Application.GroupCoordinationState ReadGroupState(string key)=>History.ReadGroupState(key);
+        public IReadOnlyList<string> GroupMembers(string scanId,string key)
+        {
+            var latest=History.GetVersions().Where(v=>v.State==ScanVersionState.Completed).OrderByDescending(v=>v.SequenceNumber).FirstOrDefault();
+            if(latest?.ScanId!=scanId)throw new InvalidOperationException("Group changed; select the latest completed scan.");
+            return (History.GetGroups(scanId).SingleOrDefault(g=>g.GroupKey==key)??throw new InvalidOperationException("Group is no longer current.")).MemberClashIds;
+        }
+        public void ChangeGroupStatus(string scanId,string key,ClashStatus target,string author,string reason)
+        {Atomic(()=>new Dashboard.Application.LifecycleCommandService(this).ChangeStatus(GroupMembers(scanId,key).Where(id=>ReadCurrentIssue(id)!=null),target,author,reason));}
+        public void CommitGroup(string scanId,Dashboard.Application.GroupCoordinationState expected,Dashboard.Application.GroupCoordinationState state,IReadOnlyList<Dashboard.Domain.IssueMutation> changes,string author)
+        {
+            Atomic(()=>{GroupMembers(scanId,state.GroupKey);if(JsonConvert.SerializeObject(ReadGroupState(state.GroupKey))!=JsonConvert.SerializeObject(expected))throw new InvalidOperationException("Group defaults changed. Refresh and retry.");CommitMutations(changes);if(JsonConvert.SerializeObject(expected)!=JsonConvert.SerializeObject(state))History.SaveGroupState(state,_transaction!,author);});
+        }        public void UpsertGroup(ClashGroup g)
         {
             if (_conn == null || g == null) return;
             try
             {
                 string metaJson = JsonConvert.SerializeObject(g.Metadata);
                 ExecuteNonQuery(@"
-                    INSERT OR REPLACE INTO ClashGroups
+                    INSERT INTO ClashGroups
                     (GroupId, GroupTitle, MaxSeverity, Status, GroupingReason,
                      LevelName, ZoneName, GridRef, DisciplineA, DisciplineB,
                      PrimaryOffender, DetectedAt, MetadataJson)
                     VALUES
                     (@gid, @title, @sev, @status, @reason,
                      @lv, @zone, @gr, @da, @db,
-                     @off, @det, @meta)",
+                     @off, @det, @meta)
+                    ON CONFLICT(GroupId) DO UPDATE SET GroupTitle=excluded.GroupTitle,MaxSeverity=excluded.MaxSeverity,
+                     Status=excluded.Status,GroupingReason=excluded.GroupingReason,LevelName=excluded.LevelName,
+                     ZoneName=excluded.ZoneName,GridRef=excluded.GridRef,DisciplineA=excluded.DisciplineA,DisciplineB=excluded.DisciplineB,
+                     PrimaryOffender=excluded.PrimaryOffender,DetectedAt=excluded.DetectedAt,MetadataJson=excluded.MetadataJson",
                     ("@gid",    g.GroupId),
                     ("@title",  g.GroupTitle),
                     ("@sev",    g.MaxSeverity.ToString()),
@@ -355,7 +384,7 @@ namespace ClashResolveAI.Core
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ClashDB] UpsertGroup error: {ex.Message}");
+                Diagnostics.Log("Database group write failed",ex);throw;
             }
         }
 
@@ -369,8 +398,8 @@ namespace ClashResolveAI.Core
             try
             {
                 string sql = status.HasValue
-                    ? "SELECT COUNT(*) FROM Clashes WHERE Status=@s"
-                    : "SELECT COUNT(*) FROM Clashes";
+                    ? "SELECT COUNT(*) FROM Clashes WHERE Archived=0 AND Status=@s"
+                    : "SELECT COUNT(*) FROM Clashes WHERE Archived=0";
                 var result = status.HasValue
                     ? ExecuteScalar(sql, ("@s", status.Value.ToString()))
                     : ExecuteScalar(sql);
@@ -397,7 +426,7 @@ namespace ClashResolveAI.Core
                 cmd.CommandText = @"
                     SELECT DisciplineA, DisciplineB, COUNT(*) as cnt
                     FROM Clashes
-                    WHERE Status NOT IN ('Resolved','Ignored','Closed')
+                    WHERE Archived=0 AND Status NOT IN ('Resolved','Ignored','Closed')
                     GROUP BY DisciplineA, DisciplineB";
 
                 using var reader = cmd.ExecuteReader();
@@ -427,10 +456,10 @@ namespace ClashResolveAI.Core
                            COUNT(*) as total,
                            SUM(CASE WHEN Status IN ('Resolved','Closed') THEN 1 ELSE 0 END) as res
                     FROM Clashes
-                    WHERE DetectedAt >= @since
+                    WHERE Archived=0 AND DetectedAt >= @since
                     GROUP BY week ORDER BY week";
                 cmd.Parameters.AddWithValue("@since",
-                    DateTime.Now.AddDays(-weeksBack * 7).ToString("o"));
+                    DateTime.UtcNow.AddDays(-weeksBack * 7).ToString("o"));
 
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
@@ -450,25 +479,8 @@ namespace ClashResolveAI.Core
             return result;
         }
 
-        /// <summary>Health score 0–100 based on resolution rate and open critical count.</summary>
-        public double GetHealthScore()
-        {
-            if (_conn == null) return 0;
-            try
-            {
-                int total    = GetClashCount();
-                int resolved = GetClashCount(ClashStatus.Resolved) +
-                               GetClashCount(ClashStatus.Closed);
-                int critical = GetClashCount(ClashStatus.Active);
-
-                if (total == 0) return 100;
-                double resRate   = (double)resolved / total * 60;
-                double critPen   = Math.Min(40, critical * 2.0);
-                return Math.Max(0, Math.Min(100, resRate + (40 - critPen)));
-            }
-            catch { return 0; }
-        }
-
+        /// <summary>Compatibility numeric accessor; the workspace displays an empty evidence basis as unavailable.</summary>
+        public double GetHealthScore()=>_history==null?0:Dashboard.Application.DashboardMetricPolicy.Calculate(_history.GetCurrent(),null,null).Health??0;
         /// <summary>Save weekly snapshot for trend tracking.</summary>
         public void SaveWeeklySnapshot()
         {
@@ -504,6 +516,7 @@ namespace ClashResolveAI.Core
         {
             if (_conn == null) return;
             using var cmd = _conn.CreateCommand();
+            cmd.Transaction=_transaction;
             cmd.CommandText = sql;
             foreach (var (k, v) in parms)
                 cmd.Parameters.AddWithValue(k, v ?? DBNull.Value);
@@ -514,6 +527,7 @@ namespace ClashResolveAI.Core
         {
             if (_conn == null) return null;
             using var cmd = _conn.CreateCommand();
+            cmd.Transaction=_transaction;
             cmd.CommandText = sql;
             foreach (var (k, v) in parms)
                 cmd.Parameters.AddWithValue(k, v ?? DBNull.Value);
@@ -522,7 +536,7 @@ namespace ClashResolveAI.Core
 
         private static DateTime GetWeekStart()
         {
-            var today = DateTime.Today;
+            var today = DateTime.UtcNow.Date;
             int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
             return today.AddDays(-diff);
         }
@@ -532,6 +546,7 @@ namespace ClashResolveAI.Core
             _conn?.Close();
             _conn?.Dispose();
             _conn = null;
+            _history=null;
         }
     }
 }

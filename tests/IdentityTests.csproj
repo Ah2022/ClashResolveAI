@@ -10,6 +10,7 @@
     <Compile Include="..\src\LiveMonitor\ChangeAccumulator.cs" Link="ChangeAccumulator.cs" />
     <Compile Include="..\src\LiveMonitor\LiveClashDto.cs" Link="LiveClashDto.cs" />
     <Compile Remove="InspectorHarness\**\*.cs" />
+    <Compile Remove="DashboardHistoryHarness\**\*.cs" />
     <Compile Include="..\src\BimEngine\Spatial\AABB.cs" Link="BimAabb.cs" />
     <Compile Include="..\src\BimEngine\Spatial\Octree.cs" Link="BimOctree.cs" />
     <Compile Include="..\src\Inspection\InspectionScene.cs" Link="InspectionScene.cs" />

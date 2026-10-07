@@ -1,4 +1,4 @@
-﻿// Commands/Commands.cs  — v7.0
+// Commands/Commands.cs  — v7.0
 // v7.0: ResetInternal() call removed (no longer exists in LiveMonitorService).
 //
 // FIX v6.0 (LiveMonitorCommand):
@@ -53,7 +53,11 @@ namespace ClashResolveAI.Commands
     {
         public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
         {
-            var doc = data.Application.ActiveUIDocument?.Document;
+            return Run(data.Application,ref msg);
+        }
+        internal static Result Run(UIApplication application,ref string msg)
+        {
+            var doc = application.ActiveUIDocument?.Document;
             if (doc == null || doc.IsFamilyDocument) { msg = "Open a project document first."; return Result.Cancelled; }
             try
             {
@@ -86,13 +90,12 @@ namespace ClashResolveAI.Commands
                 ScanCoordinator.Start(doc, selectedLevelId, Session.ActiveZone, (clashes, stats) => {
                     int retained=ClashDashboard.Instance.MergeFullScan(clashes,stats.Mode,stats.Scope);
                     progress.Close();
-                    TaskDialog.Show("Scan complete",
-                        $"Hard clashes: {clashes.Count(c => c.TestType == ClashTestType.HardClash)}\n" +
-                        $"Possible hard: {clashes.Count(c => c.TestType == ClashTestType.Unverified&&c.UnverifiedReason==UnverifiedReason.SolidTest)}\n" +
-                        $"Confirmed clearance violations: {clashes.Count(c => c.TestType == ClashTestType.ClearanceClash)}\n" +
-                        $"Unverified candidates: {clashes.Count(c => c.TestType == ClashTestType.Unverified)}\n\n" +
-                        retained+" clearance rows retained from earlier scans, not re-tested.\n\n"+stats.Summary + "\n\nUnverified candidates require review; they are not confirmed clashes.");
-                }, progress.SetMessage, reason => { progress.Close(); Diagnostics.Log(reason); },options.Options.SelectedMode,options.Options.IncludeLinkToLink);
+                    DashboardCommand.EnsureApiActions();
+                    ClashDashboard.Instance.ShowOverview();
+                }, progress.SetMessage, reason => {
+                    progress.Close();Diagnostics.Log(reason);
+                    if(!reason.StartsWith("Scan cancelled",StringComparison.Ordinal)&&reason!="Project closed.")TaskDialog.Show("Scan stopped",reason);
+                },options.Options.SelectedMode,options.Options.IncludeLinkToLink);
                 return Result.Succeeded;
             }
             catch (Exception ex)
@@ -224,10 +227,25 @@ namespace ClashResolveAI.Commands
         private static ExternalEvent?          _show2DEvent;
         private static ExternalEvent?          _show3DEvent;
 
-        public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
+        private static DashboardHistoryNavigationHandler? _historyNavigation;
+        private static ExternalEvent? _historyEvent;
+        private static DashboardInspectHandler? _inspectHandler;
+        private static ExternalEvent? _inspectEvent;
+        private static DashboardPreviewHandler? _previewHandler;
+        private static ExternalEvent? _previewEvent;
+        private static DashboardRunScanHandler? _scanHandler;
+        private static ExternalEvent? _scanEvent;
+        internal static void ShutdownApiActions()
         {
-            try
-            {
+            _previewEvent?.Dispose();_previewEvent=null;_previewHandler=null;
+            _historyEvent?.Dispose();_historyEvent=null;_historyNavigation=null;
+            _show2DEvent?.Dispose();_show3DEvent?.Dispose();_scanEvent?.Dispose();_inspectEvent?.Dispose();
+            _show2DEvent=null;_show3DEvent=null;_scanEvent=null;_inspectEvent=null;
+            _show2DHandler=null;_show3DHandler=null;_scanHandler=null;_inspectHandler=null;
+            ClashDashboard.Instance.CloseWindow();
+        }
+        internal static void EnsureApiActions()
+        {
                 // Create ExternalEvent handlers once (lazy init — persists for session)
                 if (_show2DEvent == null)
                 {
@@ -252,6 +270,26 @@ namespace ClashResolveAI.Commands
                     _show3DEvent!.Raise();
                 };
 
+            if(_historyEvent==null){_historyNavigation=new DashboardHistoryNavigationHandler();_historyEvent=ExternalEvent.Create(_historyNavigation);}
+            ClashDashboard.Instance.HistoryNavigationAction=row=>{_historyNavigation!.Pending=row;_historyEvent.Raise();};
+            if(_inspectEvent==null){_inspectHandler=new DashboardInspectHandler();_inspectEvent=ExternalEvent.Create(_inspectHandler);}
+            _inspectHandler!.RaisePin=(row,scene,preferences)=>{_inspectHandler.Pending=row;_inspectHandler.PinScene=scene;_inspectHandler.PinPreferences=preferences;_inspectEvent!.Raise();};
+            ClashDashboard.Instance.InspectAction=row=>{_inspectHandler.Pending=row;_inspectEvent!.Raise();};
+            if(_previewEvent==null){_previewHandler=new DashboardPreviewHandler();_previewEvent=ExternalEvent.Create(_previewHandler);}
+            ClashDashboard.Instance.PreviewAction=(row,done)=>{_previewHandler!.Pending=row;_previewHandler.Completed=done;if(_previewEvent.Raise()==ExternalEventRequest.Denied){_previewHandler.Pending=null;_previewHandler.Completed=null;done(null,"Revit preview queue is unavailable. Reload preview.");}};
+            ClashDashboard.Instance.PinPreviewAction=(row,scene,preferences)=>_inspectHandler.RaisePin?.Invoke(row,scene,preferences);
+            if(_scanEvent==null){_scanHandler=new DashboardRunScanHandler();_scanEvent=ExternalEvent.Create(_scanHandler);}
+            ClashDashboard.Instance.RunScanAction=()=>{_scanHandler!.DocumentKey=DocumentSession.CurrentKey;_scanEvent!.Raise();};
+        }
+
+        public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
+        {
+            try
+            {
+                var doc=data.Application.ActiveUIDocument?.Document;
+                if(doc==null||doc.IsFamilyDocument){msg="Open a project document first.";return Result.Cancelled;}
+                DocumentSession.Activate(doc);
+                EnsureApiActions();
                 ClashDashboard.Instance.ShowWindow();
                 return Result.Succeeded;
             }

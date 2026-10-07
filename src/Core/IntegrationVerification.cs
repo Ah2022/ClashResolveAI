@@ -52,6 +52,7 @@ namespace ClashResolveAI.Core
             if(DateTime.UtcNow<_next)return;
             try
             {
+                if(Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_DASHBOARD")=="1"){DashboardReleaseStep(app);return;}
                 if(_step>=700){ReleaseStep(app);return;}
                 if(_step==0&&Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_RELEASE")=="1"){_step=700;ReleaseStep(app);return;}
                 if(_step>=500){Phase5Step(app);return;}
@@ -283,9 +284,9 @@ namespace ClashResolveAI.Core
             Check(full.Count >= 3 && full.Select(c => c.NormalizedKey).Distinct().Count() == full.Count, "Rotated and repeated linked model instances retain distinct identities");
             ClashDatabase.Instance.BulkInsertClashes(full);
             Check(ClashDatabase.Instance.GetClashCount() >= 3, "SQLite native dependency and persistence work");
-            var reasons=Enum.GetValues(typeof(UnverifiedReason)).Cast<UnverifiedReason>().Select((reason,i)=>new ClashResult {ClashId="REASON-"+i,TestType=ClashTestType.Unverified,UnverifiedReason=reason}).ToList();
-            ClashDatabase.Instance.BulkInsertClashes(reasons);
-            using(var connection=new System.Data.SQLite.SQLiteConnection("Data Source="+Path.Combine(_folder,"databases",DocumentSession.Key(doc)+".clash.db")+";Version=3;")){
+            var reasons=Enum.GetValues(typeof(UnverifiedReason)).Cast<UnverifiedReason>().Select((reason,i)=>new ClashResult {ClashId="REASON-"+i,HostDocumentKey="reason-fixture",ElementAId=80000000+i,ElementBId=81000000+i,ElementUniqueIdA="reason-a-"+i,ElementUniqueIdB="reason-b-"+i,TestType=ClashTestType.Unverified,UnverifiedReason=reason}).ToList();
+            using(var reasonDatabase=new ClashDatabase()){reasonDatabase.Open("reason-fixture");reasonDatabase.BulkInsertClashes(reasons);}
+            using(var connection=new System.Data.SQLite.SQLiteConnection("Data Source="+Path.Combine(_folder,"databases","reason-fixture.clash.db")+";Version=3;")){
                 connection.Open();using var command=connection.CreateCommand();command.CommandText="SELECT ClashId,UnverifiedReason FROM Clashes WHERE ClashId LIKE 'REASON-%'";
                 using var reader=command.ExecuteReader();int matched=0;
                 while(reader.Read())if(reasons.Any(c=>c.ClashId==reader.GetString(0)&&c.UnverifiedReason.ToString()==reader.GetString(1)))matched++;
@@ -412,5 +413,3 @@ namespace ClashResolveAI.Core
         }
     }
 }
-
-

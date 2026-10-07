@@ -1,4 +1,4 @@
-﻿// Core/Models.cs  — v4.0  Professional BIM Coordination Engine
+// Core/Models.cs  — v4.0  Professional BIM Coordination Engine
 // Major additions:
 //   • Full clash lifecycle states (NEW → CLOSED)
 //   • ClashGroup — Navisworks-style grouped issues
@@ -51,7 +51,8 @@ namespace ClashResolveAI.Core
         OnSite    = 4,
         Resolved  = 5,
         Ignored   = 6,
-        Closed    = 7
+        Closed    = 7,
+        Reopened  = 8
     }
 
     public enum ScanMode { HardOnly, HardAndClearance }
@@ -127,6 +128,9 @@ namespace ClashResolveAI.Core
     {
         public string       AssignedDiscipline  { get; set; } = "";
         public string       AssignedEngineer    { get; set; } = "";
+        public string InheritedGroupKey { get; set; }="";
+        public bool OwnerOverride { get; set; }
+        public bool DueOverride { get; set; }
         public DateTime?    DueDate             { get; set; }
         public string       Comments            { get; set; } = "";
         public string       ResolutionNotes     { get; set; } = "";
@@ -138,7 +142,7 @@ namespace ClashResolveAI.Core
 
     public class ClashRevision
     {
-        public DateTime     Timestamp   { get; set; } = DateTime.Now;
+        public DateTime     Timestamp   { get; set; } = DateTime.UtcNow;
         public string       Author      { get; set; } = "";
         public ClashStatus  OldStatus   { get; set; }
         public ClashStatus  NewStatus   { get; set; }
@@ -207,12 +211,16 @@ namespace ClashResolveAI.Core
         // Identity
         public string        ClashId           { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8).ToUpper();
         public string        GroupId           { get; set; } = "";   // set by grouping engine
-        public DateTime      DetectedAt        { get; set; } = DateTime.Now;
+        public DateTime      DetectedAt        { get; set; } = DateTime.UtcNow;
 
         // Elements
         private Element _elementA = null!;
         public Element ElementA { get => _elementA; set { _elementA = value; ElementAId = SafeElementId(value); CategoryNameA = SafeCategoryName(value, DisciplineA); } }
         public long ElementAId { get; set; }
+        public string ElementUniqueIdA { get; set; } = "";
+        public string ElementUniqueIdB { get; set; } = "";
+        public string ElementSignatureA { get; set; } = "";
+        public string ElementSignatureB { get; set; } = "";
         public string HostDocumentKey { get; set; } = "";
         public long SessionGeneration { get; set; }
         public string LinkInstanceA { get; set; } = "";
@@ -259,6 +267,18 @@ namespace ClashResolveAI.Core
 
         // Lifecycle — NEW in v4.0
         public ClashStatus   Status            { get; set; } = ClashStatus.New;
+        public string ChangeKind { get; set; } = "";
+        public string ObservationKind { get; set; } = "Observed";
+        public string EvaluationReason { get; set; } = "";
+        public int ChangeFlags { get; set; }
+        public string PreviousScanId { get; set; } = "";
+        public string CurrentScanId { get; set; } = "";
+        public DateTime? LastSeenAtUtc { get; set; }
+        public DateTime? ResolvedAtUtc { get; set; }
+        public DateTime? ReopenedAtUtc { get; set; }
+        public DateTime? OpenEpisodeAtUtc { get; set; }
+        public int SeenInScanCount { get; set; }
+        public int ConsecutiveScanCount { get; set; }
         public ClashMetadata Metadata          { get; set; } = new ClashMetadata();
 
         // AI / RFI
@@ -311,7 +331,7 @@ namespace ClashResolveAI.Core
         public List<ClashResult> Clashes          { get; set; } = new List<ClashResult>();
         public int               Count            => Clashes.Count;
         public string            PrimaryOffender  { get; set; } = "";  // Root cause element
-        public DateTime          DetectedAt       { get; set; } = DateTime.Now;
+        public DateTime          DetectedAt       { get; set; } = DateTime.UtcNow;
         public ClashMetadata     Metadata         { get; set; } = new ClashMetadata();
     }
 
@@ -329,7 +349,7 @@ namespace ClashResolveAI.Core
         public Discipline    Discipline      { get; set; }
         public string        SystemType      { get; set; } = "";
         public string        LevelId         { get; set; } = "";
-        public DateTime      CachedAt        { get; set; } = DateTime.Now;
+        public DateTime      CachedAt        { get; set; } = DateTime.UtcNow;
         public bool          IsValid         { get; set; } = true;
     }
 
@@ -416,7 +436,7 @@ namespace ClashResolveAI.Core
         public string   Description     { get; set; } = "";
         public string   AssignedTo      { get; set; } = "";
         public string   CreationAuthor  { get; set; } = "ClashResolveAI";
-        public DateTime CreationDate    { get; set; } = DateTime.Now;
+        public DateTime CreationDate    { get; set; } = DateTime.UtcNow;
         public string   Priority        { get; set; } = "Normal";
         public List<BcfComment>   Comments   { get; set; } = new List<BcfComment>();
         public List<BcfViewpoint> Viewpoints { get; set; } = new List<BcfViewpoint>();
@@ -428,7 +448,7 @@ namespace ClashResolveAI.Core
         public string   Guid        { get; set; } = System.Guid.NewGuid().ToString();
         public string   Author      { get; set; } = "";
         public string   Comment     { get; set; } = "";
-        public DateTime Date        { get; set; } = DateTime.Now;
+        public DateTime Date        { get; set; } = DateTime.UtcNow;
         public string   ViewpointGuid { get; set; } = "";
     }
 

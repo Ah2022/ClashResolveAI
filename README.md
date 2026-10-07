@@ -17,10 +17,14 @@ ClashResolveAI helps BIM coordinators and MEP designers find physical clashes, i
 - Defaults to **hard-only** detection with a **1 mm³ minimum overlap**. Optional combined mode also checks clearance rules.
 - Checks host elements against the host and configured loaded links. **Include link-to-link is off by default.** Unloaded links cannot be checked.
 - Lets you navigate to issues in 2D/3D, inspect element and overlap geometry, and manage issue status.
-- Exports Dashboard coordination results to Excel, Word, and BCF 2.1. Radar has a separate CSV export.
+- Provides Overview, Issues, Groups, History and Analytics with immutable saved scans, audited workflow and group coordination.
+- Embeds automatic side-by-side 2D/3D clash previews in the Issues panel.
+- Exports the shown current/historical issue or group scope to Excel, Word and BCF 2.1. Radar has a separate CSV export.
 - Offers optional AI-assisted suggestions and RFI text. Geometry detection works without an API key.
 
 The add-in supports coordination decisions; a scan is not a guarantee that a model is clash-free. Unsupported geometry or failed Boolean operations remain **unverified**, not confirmed hard clashes.
+
+Read the [dashboard user guide](docs/DASHBOARD_USER_GUIDE.md) and [renovation verification](docs/DASHBOARD_RENOVATION.md) for the new workspace and acceptance limits.
 
 ## Requirements
 

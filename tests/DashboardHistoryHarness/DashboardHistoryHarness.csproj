@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net48</TargetFramework><PlatformTarget>x64</PlatformTarget>
+    <UseWPF>true</UseWPF><Nullable>enable</Nullable><LangVersion>9.0</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.117" />
+    <Compile Include="../RevitStubs.cs" Link="RevitStubs.cs" />
+    <Compile Include="../../src/Core/Models.cs" Link="Models.cs" />
+    <Compile Include="../../src/Core/ClashIdentity.cs" Link="ClashIdentity.cs" />
+    <Compile Include="../../src/Core/ResultLifecycle.cs" Link="ResultLifecycle.cs" />
+    <Compile Include="../../src/Core/ClashDatabase.cs" Link="ClashDatabase.cs" />
+    <Compile Include="../../src/Engine/ScanJob.cs" Link="ScanJob.cs" />
+    <Compile Include="../../src/Engine/ClashGroupingEngine.cs" Link="ClashGroupingEngine.cs" />
+    <Compile Include="../../src/Dashboard/Domain/ScanHistory.cs" Link="ScanHistory.cs" />
+    <Compile Include="../../src/Dashboard/Domain/ScanComparison.cs" Link="ScanComparison.cs" />
+    <Compile Include="../../src/Dashboard/Application/ScanComparisonService.cs" Link="ScanComparisonService.cs" />
+    <Compile Include="../../src/Dashboard/Application/LifecycleCommandService.cs" Link="LifecycleCommandService.cs" />
+    <Compile Include="../../src/Dashboard/Application/DashboardMetricPolicy.cs" Link="DashboardMetricPolicy.cs" />
+    <Compile Include="../../src/Dashboard/Application/FullScanDashboardService.cs" Link="FullScanDashboardService.cs" />
+    <Compile Include="../../src/Dashboard/Persistence/ScanHistoryRepository.cs" Link="ScanHistoryRepository.cs" />
+    <Compile Include="../../src/Dashboard/Persistence/ClashObservationAdapter.cs" Link="ClashObservationAdapter.cs" />
+    <Compile Include="../../src/Dashboard/Application/FullScanSnapshotService.cs" Link="FullScanSnapshotService.cs" />
+    <Compile Include="../../src/Dashboard/Application/DashboardWorkspace.cs" Link="DashboardWorkspace.cs" />
+    <Compile Include="../../src/Dashboard/Persistence/DashboardDataSource.cs" Link="DashboardDataSource.cs" />
+    <Compile Include="../../src/Dashboard/Views/DashboardWindow.cs" Link="DashboardWindow.cs" />
+    <Reference Include="System.IO.Compression" />
+    <Compile Include="../../src/Services/BcfExportService.cs" Link="BcfExportService.cs" />
+    <Compile Include="../../src/Dashboard/Application/DashboardExportProjection.cs" Link="DashboardExportProjection.cs" />
+    <Compile Include="../../src/Dashboard/Application/GroupCoordinationService.cs" Link="GroupCoordinationService.cs" />
+    <Compile Include="../../src/Dashboard/Application/DashboardHistoryService.cs" Link="DashboardHistoryService.cs" />
+    <Compile Include="../../src/Dashboard/Views/DashboardCoordinationViews.cs" Link="DashboardCoordinationViews.cs" />
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <Compile Include="../../src/Dashboard/Application/DashboardAnalyticsService.cs" Link="DashboardAnalyticsService.cs" />
+    <Compile Include="../../src/Dashboard/Application/DashboardExportService.cs" Link="DashboardExportService.cs" />
+    <Compile Include="../../src/Dashboard/Views/DashboardAnalyticsViews.cs" Link="DashboardAnalyticsViews.cs" />
+    <Compile Include="../../src/Dashboard/Views/DashboardPreviewViews.cs" Link="DashboardPreviewViews.cs" />
+    <Compile Include="../../src/Inspection/InspectionScene.cs" Link="InspectionScene.cs" />
+    <Compile Include="../../src/Inspection/InspectionViewport.cs" Link="InspectionViewport.cs" />
+    <Compile Include="../../src/Inspection/ClashInspector.cs" Link="ClashInspector.cs" />
+    <Compile Include="../../src/Inspection/InspectorPreferences.cs" Link="InspectorPreferences.cs" />
+  </ItemGroup>
+</Project>

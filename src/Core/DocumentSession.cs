@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB;
 using ClashResolveAI.Commands;
 using ClashResolveAI.Dashboard;
 using ClashResolveAI.LiveMonitor;
@@ -43,20 +43,23 @@ namespace ClashResolveAI.Core
             ScanCoordinator.Observe(doc);
             LiveMonitorService.Instance.ActivateDocument(key);
             if (key == _currentKey) { Current = doc; return; }
+            if(ScanCoordinator.Busy&&ScanCoordinator.BusyDocumentKey!=key)ScanCoordinator.Cancel("Active project changed; previous results retained.");
             if (States.TryGetValue(_currentKey, out var old))
             {
                 old.Dashboard = ClashDashboard.Instance.Clashes.ToList();
                 old.Filter=ClashDashboard.Instance.ViewFilter.Copy();
             }
-            if (!States.TryGetValue(key, out var state)) States[key] = state = new State();
+            bool newSession=!States.TryGetValue(key,out var state);
+            if(newSession)state=new State();
             GeometryCacheService.Instance.Clear();
             ClashDatabase.Instance.Open(Key(doc));
+            if(newSession){state!.Dashboard=ClashDatabase.Instance.LoadCurrentClashes();States[key]=state;}
             Current = doc;
             _currentKey = key;
             Session.ProjectName = doc.Title;
             Session.RuleSetName = AppSettings.Load().RuleSetName;
             RadarDataStore.Instance.Activate(key);
-            ClashDashboard.Instance.RestoreSession(state.Dashboard,state.Filter);
+            ClashDashboard.Instance.RestoreSession(state!.Dashboard,state.Filter);
             Diagnostics.Log("Active document: " + Key(doc));
         }
         public static void Close(Document doc) => CloseKey(Key(doc));

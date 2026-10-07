@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using ClashResolveAI.Core;
@@ -8,6 +8,9 @@ namespace ClashResolveAI.ClashEngine
     public sealed class ScanStatistics
     {
         public string Phase = "Preparing";
+        public string ScanId = "";
+        public int ScanSequenceNumber=0;
+        public string ScanCaptureJson = "";
         public ScanMode Mode;
         public bool IncludeLinkToLink, NativeLinkQueries;
         public ScanScope Scope=new ScanScope();

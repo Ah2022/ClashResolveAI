@@ -22,6 +22,26 @@ Validate an exported BCF archive with:
 .\tests\Validate-Bcf.ps1 -Path 'C:\path\to\export.bcf'
 ```
 
+## Dashboard renovation checks
+
+```powershell
+dotnet run --project tests/DashboardHistoryHarness/DashboardHistoryHarness.csproj -c Release -- verification/dashboard-phase67/history-tests
+```
+
+The recorded production workload is optional and excluded from Git. To run it, put your own authorized `reference-production-scan.json` under `verification/dashboard-phase67`; otherwise the harness prints an explicit skip. Repository-only checks still exercise SQLite history, copied-backup restore/remigration, comparisons, group lineage, Analytics, current/historical exports and embedded preview callback/layout behavior.
+
+After building with `build.ps1`, run native suites **sequentially**, with all user Revit sessions closed:
+
+```powershell
+.\tests\Run-DashboardReleaseVerification.ps1 -Suite Ledger -Interactive
+# Wait for the run's complete.txt and perform its one Undo/Redo checkpoint.
+# Close only that disposable session before starting the next suite.
+.\tests\Run-DashboardReleaseVerification.ps1 -Suite Dashboard
+# Wait for complete.txt; close its disposable session.
+.\tests\Run-DashboardReleaseVerification.ps1 -Suite Live
+```
+
+The startup script returning confirms assembly loading and registration restoration, not suite completion. Any `failed.txt` is a failure. The Ledger checkpoint asks for one Undo of **Phase4 place segment 2**, then one Redo after `phase4-awaiting-redo.txt` appears. `-Interactive` opens its test window for these manual actions. Native fixtures and registration backups stay under ignored project directories. The current suite evidence and remaining acceptance gates are summarized in [Dashboard renovation verification](DASHBOARD_RENOVATION.md).
 ## Revit integration and production-copy comparison
 
 For the installed Live Monitor 9.4 build, close Revit and run `./tests/Run-LiveReleaseVerification.ps1`. Approve the unsigned add-in prompt if you trust the build. This creates synthetic host and linked models in a new ignored verification folder. Wait for `complete.txt`; any `failed.txt` is a failure. Tests cover modes, placement, movement, deletion, dockable pane, navigation/inspection, stale rejection, Full Scan handoff and diagnostics. Actual UI Undo/Redo and large-model performance remain separate acceptance checks; they must not be inferred from these synthetic checks.

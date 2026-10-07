@@ -6,6 +6,9 @@ using ClashResolveAI.Commands;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ClashResolveAI.Dashboard.Domain;
+using ClashResolveAI.Dashboard.Persistence;
+using Newtonsoft.Json;
 
 namespace ClashResolveAI.Core
 {
@@ -75,6 +78,7 @@ namespace ClashResolveAI.Core
                 // only supported geometry IDs belong in the dirty-result set.
                 Revisions.Changed(key,ids,inputs);
                 if(_job!=null&&key==_documentKey)Cancel("Model changed during scan. Run the scan again.");
+                if(key==DocumentSession.CurrentKey)Dashboard.ClashDashboard.Instance.NotifyGeometryChanged();
                 if(LiveMonitor.ClashRadarPanel.IsVisible)LiveMonitor.ClashRadarPanel.Instance.NotifyGeometryChanged();
             };
             app.ControlledApplication.DocumentClosing+=(_,e)=>{if(_job!=null&&DocumentSession.Key(e.Document)==_documentKey)Cancel("Project closed.");ScanSessionCache.Close(e.Document);};
@@ -86,21 +90,43 @@ namespace ClashResolveAI.Core
         internal static void StartJob(Document doc,ScanJob job,Action<List<ClashResult>,ScanStatistics> done,Action<string>? progress=null,Action<string>? failed=null,bool completeScope=false)
         {
             Cancel("Replaced by a newer scan.");
-            _documentKey=DocumentSession.Key(doc);_job=job;
-            _startRevision=DocumentRevision(_documentKey);_startEnvironment=LiveMonitor.LiveEnvironment.Capture(doc);
-            LiveMonitor.LiveMonitorService.Instance.FullScanStarted(_documentKey,_startRevision);
-            _completeScope=completeScope;
-            _done=done;_progress=progress;_failed=failed;_nextProgress=DateTime.MinValue;
-            _timer?.Start();_event?.Raise();
+            try {
+                DocumentSession.Activate(doc);
+                bool customCapture=string.IsNullOrEmpty(job.Statistics.ScanCaptureJson);
+                var capture=customCapture
+                    ?RevitScanCapture.Capture(doc,AppSettings.Load().ScanSnapshot(),AppSettings.Load().ScanLinkedModels,"",null,job.Statistics.Mode,AppSettings.Load().IncludeLinkToLink)
+                    :JsonConvert.DeserializeObject<ScanCapture>(job.Statistics.ScanCaptureJson)!;
+                if(customCapture){capture.FullModelScope=completeScope;capture.ScopeJson="{\"CaptureSource\":\"CustomJob\",\"Scope\":\"Unspecified\"}";}
+                var attempt=ClashDatabase.Instance.History.BeginScan(capture);
+                job.Statistics.ScanId=attempt.ScanId;job.Statistics.ScanSequenceNumber=attempt.SequenceNumber;
+                _documentKey=DocumentSession.Key(doc);_job=job;
+                _startRevision=DocumentRevision(_documentKey);_startEnvironment=LiveMonitor.LiveEnvironment.Capture(doc);
+                _completeScope=completeScope;
+                _done=done;_progress=progress;_failed=failed;_nextProgress=DateTime.MinValue;
+                LiveMonitor.LiveMonitorService.Instance.FullScanStarted(_documentKey,_startRevision);
+                _timer?.Start();_event?.Raise();
+            } catch(Exception ex) {
+                _timer?.Stop();_job=null;_done=null;_progress=null;_failed=null;
+                if(job.Statistics.ScanId!="") {
+                    try {ClashDatabase.Instance.History.EndAttempt(job.Statistics.ScanId,ScanVersionState.Failed,ex.Message);}
+                    catch(Exception historyError){Diagnostics.Log("Could not persist scan startup failure",historyError);}
+                    LiveMonitor.LiveMonitorService.Instance.FullScanEnded(doc,DocumentSession.Key(doc),false,completeScope,null,DocumentRevision(DocumentSession.Key(doc)));
+                }
+                job.Dispose();throw;
+            }
         }
         public static void Cancel(string reason="Scan cancelled; previous results retained.")
         {
             _timer?.Stop();
             var job=_job;var failed=_failed;_job=null;_done=null;_progress=null;_failed=null;
-            if(job!=null){job.Dispose();LiveMonitor.LiveMonitorService.Instance.FullScanEnded(null,_documentKey,false,_completeScope,null,DocumentRevision(_documentKey));failed?.Invoke(reason);}
+            if(job!=null){
+                try {ClashDatabase.Instance.History.EndAttempt(job.Statistics.ScanId,ScanVersionState.Cancelled,reason);}
+                catch(Exception ex){Diagnostics.Log("Could not persist scan cancellation",ex);reason+=" History write failed: "+ex.Message;}
+                job.Dispose();LiveMonitor.LiveMonitorService.Instance.FullScanEnded(null,_documentKey,false,_completeScope,null,DocumentRevision(_documentKey));failed?.Invoke(reason);
+            }
         }
         public static void Shutdown()
-        { Cancel("Revit closing.");_timer?.Stop();_timer=null;_event?.Dispose();_event=null;ScanSessionCache.Clear(); }
+        { Cancel("Revit closing.");Commands.DashboardCommand.ShutdownApiActions();_timer?.Stop();_timer=null;_event?.Dispose();_event=null;ScanSessionCache.Clear(); }
         private static void Advance(UIApplication app)
         {
             if(_job==null)return;
@@ -123,16 +149,32 @@ namespace ClashResolveAI.Core
                     var currentDoc=app.ActiveUIDocument.Document;
                     if(DocumentRevision(completedKey)!=completedRevision||LiveMonitor.LiveEnvironment.Capture(currentDoc)!=_startEnvironment)
                         throw new InvalidOperationException("Full Scan inputs changed; pending live changes retained. Run Full Scan again.");
-                    callback?.Invoke(job.Results,job.Statistics);
+                    Dashboard.ClashDashboard.Instance.CompleteFullScan(job.Results,job.Statistics);
                     if(DocumentRevision(completedKey)!=completedRevision)throw new InvalidOperationException("Model changed during Full Scan publication.");
                     var doc=app.ActiveUIDocument.Document;
                     successful=job.Statistics.MissingGeometry==0&&job.Statistics.BooleanFailures==0&&job.Statistics.Unverified==0;
                     Revisions.CheckedScope(_documentKey,id=>job.Statistics.Scope.IsHostReliable(id)||(_completeScope&&doc.GetElement(new ElementId(id))==null),_completeScope&&successful);
                     if(LiveMonitor.ClashRadarPanel.IsVisible)LiveMonitor.ClashRadarPanel.Instance.NotifyGeometryChanged();
                     LiveMonitor.LiveSessionLedger.Store.Checked(_documentKey,new HashSet<long>(LiveMonitor.LiveSessionLedger.Store.Entries(_documentKey).Where(e=>job.Statistics.Scope.IsHostReliable(e.ElementId)).Select(e=>e.ElementId)));
-                } catch(Exception ex){failure?.Invoke(ex.Message);throw;} finally { job.Dispose();LiveMonitor.LiveMonitorService.Instance.FullScanEnded(app.ActiveUIDocument?.Document,completedKey,successful,completeScope,job.Statistics.Scope,DocumentRevision(completedKey)); }
+                    try {callback?.Invoke(job.Results,job.Statistics);}
+                    catch(Exception presentationError){
+                        Diagnostics.Log("Saved scan dashboard presentation failed",presentationError);
+                        TaskDialog.Show("Full Scan saved",$"V{job.Statistics.ScanSequenceNumber:D3} was saved successfully. The dashboard could not open: {presentationError.Message}");
+                    }
+                } catch(Exception ex){
+                    try {ClashDatabase.Instance.History.EndAttempt(job.Statistics.ScanId,ScanVersionState.Failed,ex.Message);}
+                    catch(Exception historyError){Diagnostics.Log("Could not persist scan failure",historyError);}
+                    failure?.Invoke(ex.Message);throw;
+                } finally { job.Dispose();LiveMonitor.LiveMonitorService.Instance.FullScanEnded(app.ActiveUIDocument?.Document,completedKey,successful,completeScope,job.Statistics.Scope,DocumentRevision(completedKey)); }
                 Diagnostics.Log("Scan complete: "+job.Statistics.Summary);
-            }catch(Exception ex){Diagnostics.Log("Scan job failed",ex);Cancel(ex.Message);}
+            }catch(Exception ex){
+                Diagnostics.Log("Scan job failed",ex);
+                if(_job!=null) {
+                    try {ClashDatabase.Instance.History.EndAttempt(_job.Statistics.ScanId,ScanVersionState.Failed,ex.Message);}
+                    catch(Exception historyError){Diagnostics.Log("Could not persist scan failure",historyError);}
+                }
+                Cancel(ex.Message);
+            }
         }
     }
 }

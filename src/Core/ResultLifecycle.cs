@@ -13,6 +13,14 @@ namespace ClashResolveAI.Core
         private readonly HashSet<string> _missingPairs=new HashSet<string>();
         private readonly Dictionary<string,HashSet<long>> _sources=new Dictionary<string,HashSet<long>>();
         private readonly Dictionary<string,HashSet<string>> _targets=new Dictionary<string,HashSet<string>>();
+        internal string PublishedScanId="";
+        internal int PublishedRetainedClearance=0;
+        public object Snapshot() => new {
+            DocumentKey=_document,
+            Sources=_sources.OrderBy(p=>p.Key,StringComparer.Ordinal).ToDictionary(p=>p.Key,p=>p.Value.OrderBy(id=>id).ToArray()),
+            TargetLinks=_targets.OrderBy(p=>p.Key,StringComparer.Ordinal).ToDictionary(p=>p.Key,p=>p.Value.OrderBy(k=>k,StringComparer.Ordinal).ToArray()),
+            UnreliableHost=_unreliableHost.OrderBy(id=>id).ToArray(),MissingPairs=_missingPairs.OrderBy(k=>k,StringComparer.Ordinal).ToArray()
+        };
         public ScanScope(string document="") { _document=document; }
         public void Note(long source,string sourceLink,string targetLink)
         {

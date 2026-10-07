@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB;
 using ClashResolveAI.Core;
 using ClashResolveAI.Links;
 using ClashResolveAI.LiveMonitor;
@@ -89,9 +89,13 @@ namespace ClashResolveAI.ClashEngine
             _hostKey=DocumentSession.Key(_doc);
             ClearJobCaches();
             _links.InvalidateCache(); // Capture current loaded documents and transforms for this job.
-            var stats=new ScanStatistics { Scope=new ScanScope(_hostKey) }; LastStatistics=stats;
+            var frozenSettings=(settingsSnapshot??AppSettings.Load()).ScanSnapshot();
+            var effectiveMode=mode??(changedIds==null?frozenSettings.FullScanMode:frozenSettings.LiveMode);
+            var stats=new ScanStatistics { Scope=new ScanScope(_hostKey),Mode=effectiveMode }; LastStatistics=stats;
+            if(changedIds==null)stats.ScanCaptureJson=Newtonsoft.Json.JsonConvert.SerializeObject(
+                Dashboard.Persistence.RevitScanCapture.Capture(_doc,frozenSettings,includeLinks,levelId,zone,effectiveMode,includeLinkToLink??frozenSettings.IncludeLinkToLink));
             var results=new List<ClashResult>();
-            return new ScanJob(Enumerate(changedIds?.ToList(),includeLinks,zone,levelId,results,stats,mode,includeLinkToLink,nativeLinkQueries,settingsSnapshot??AppSettings.Load().ScanSnapshot()),results,stats,ClearJobCaches);
+            return new ScanJob(Enumerate(changedIds?.ToList(),includeLinks,zone,levelId,results,stats,mode,includeLinkToLink,nativeLinkQueries,frozenSettings),results,stats,ClearJobCaches);
         }
         private void ClearJobCaches()
         {
@@ -313,6 +317,8 @@ namespace ClashResolveAI.ClashEngine
                 clash.ClashPoint=point;clash.LocationText=$"X:{point.X*0.3048:F3}m Y:{point.Y*0.3048:F3}m Z:{point.Z*0.3048:F3}m";
                 clash.LevelName=GetLevel(point);clash.GridRef=GetGrid(point);
                 clash.HostDocumentKey=_hostKey;clash.LinkInstanceA=sl?.Instance.UniqueId??"";clash.LinkInstanceB=tl?.Instance.UniqueId??"";
+                clash.ElementUniqueIdA=clash.ElementA.UniqueId;clash.ElementUniqueIdB=clash.ElementB.UniqueId;
+                clash.ElementSignatureA=clash.ElementA.VersionGuid.ToString();clash.ElementSignatureB=clash.ElementB.VersionGuid.ToString();
                 clash.RuleApplied=$"{_rules.CurrentRuleSetName}: {ruleKey}";clash.Priority=hard?(severity==ClashSeverity.Critical?"Critical":"High"):unknown?"Review":"Medium";
                 using(var sha=SHA256.Create())clash.ClashId=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(key))).Replace("-","").Substring(0,24);
                 if(unknown)stats.Unverified++;
