@@ -31,7 +31,7 @@ namespace ClashResolveAI.Events
         public bool CheckCurrentSelection(){
             if(_scheduler.Mode!=MonitorMode.Live)return false;
             var ui=_app.ActiveUIDocument;if(ui==null||ui.Document.IsFamilyDocument)return false;
-            var ids=ui.Selection.GetElementIds();_scheduler.Record(ui.Document,ids,LiveChangeKind.Check);return ids.Count>0;
+            var ids=ui.Selection.GetElementIds();if(ids.Count>0)_scheduler.RequestCheck(ui.Document,ids);return ids.Count>0;
         }
         private void OnSelection(object sender,SelectionChangedEventArgs args){try{CheckCurrentSelection();}catch(Exception ex){Diagnostics.Log("Selection change adapter",ex);}}
         public void RecheckLedger(Document doc,List<ElementId> ids){_scheduler.RequestCheck(doc,ids);LiveSessionLedger.Store.Pending(DocumentSession.Key(doc),new HashSet<long>(ids.Select(id=>id.Value)));}
@@ -40,8 +40,6 @@ namespace ClashResolveAI.Events
         internal void SessionRenewed(string key,long generation)=>_scheduler.SessionRenewed(key,generation);
         internal void DocumentClosed(string key){_scheduler.Close(key);LiveSessionLedger.Store.Clear(key);}
         internal void Advance(string key,long generation)=>_scheduler.Advance(key,generation);
-        internal void FullScanStarted(string key,long revision)=>_scheduler.FullScanStarted(key,revision);
-        internal void FullScanEnded(Document? doc,string key,bool success,bool complete,ScanScope? scope,long revision)=>_scheduler.FullScanEnded(doc,key,success,complete,scope,revision);
         private void OnChanged(object sender,DocumentChangedEventArgs args){
             try {
                 if(_scheduler.Mode==MonitorMode.Off)return;

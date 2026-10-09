@@ -19,10 +19,8 @@ static class ViewModelChecks
         vm.ModeCommand.Execute(MonitorMode.Off);Check(actions.ModeRequested==MonitorMode.Off&&vm.Mode==MonitorMode.Trigger,"Mode commands wait for gateway acknowledgement instead of changing scheduling optimistically");
         vm.SetStatus(new LiveScanStatus(LiveScanOutcome.Watching,"Waiting for Check Changes",4));
         vm.CheckChangesCommand.Execute(null);Check(actions.Checks==1&&actions.Document==row.HostDocumentKey&&actions.Generation==row.SessionGeneration&&vm.QueueText=="4 queued","Check Changes carries captured document/generation and displays queue depth");
-        vm.SetStatus(new LiveScanStatus(LiveScanOutcome.RequiresFullScan,"Full Scan required",4));
-        vm.CheckChangesCommand.Execute(null);Check(actions.Checks==1&&!vm.CheckChangesCommand.CanExecute(null),"Full Scan requirement disables manual local check commands");
-        vm.SetStatus(new LiveScanStatus(LiveScanOutcome.PausedForFullScan,"Full Scan running; changes retained",4));
-        Check(!vm.CheckChangesCommand.CanExecute(null),"Full Scan handoff disables local check commands without exposing a Full Scan cancel");
+        vm.SetStatus(new LiveScanStatus(LiveScanOutcome.RecheckingInputs,"Inputs changed; click Check Changes",4));
+        vm.CheckChangesCommand.Execute(null);Check(actions.Checks==2&&vm.CheckChangesCommand.CanExecute(null),"Changed inputs keep Radar recheck available without a Full Scan requirement");
         vm.SetStatus(new LiveScanStatus(LiveScanOutcome.Checking,"Checking 4 elements",4));
         Check(vm.CheckLabel=="Checking…"&&vm.CancelCommand.CanExecute(null)&&!vm.CheckChangesCommand.CanExecute(null),"Scanning status enables cancel and prevents overlapping check commands");
         vm.SetSession(row.HostDocumentKey,row.SessionGeneration,true,MonitorMode.Off);vm.Show3DCommand.Execute(null);

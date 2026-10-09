@@ -38,6 +38,13 @@ namespace ClashResolveAI.LiveMonitor
             };
             if (dlg.ShowDialog() != DialogResult.OK) return;
 
+            WriteCsv(clashes,dlg.FileName);
+            System.Diagnostics.Process.Start(dlg.FileName);
+        }
+
+        internal static void WriteCsv(IReadOnlyList<LiveClashDto> clashes,string path)
+        {
+
             var sb = new StringBuilder();
             sb.AppendLine("#,Time,Category A,Category B,ID A,ID B,Severity,Gap(mm),Location,GridRef,Origin,LiveSessionId,Verification,VerificationReason");
 
@@ -55,8 +62,7 @@ namespace ClashResolveAI.LiveMonitor
                 sb.AppendLine($"{i++},{DateTime.Now:HH:mm},{Q(catA)},{Q(catB)},{idA},{idB},{sev},{c.GapMM:F1},{Q(loc)},{Q(c.GridRef)},{c.Origin},{Q(c.LiveSessionId)},{c.Verification},{Q(c.VerificationReason)}");
             }
 
-            File.WriteAllText(dlg.FileName, sb.ToString(), Encoding.UTF8);
-            System.Diagnostics.Process.Start(dlg.FileName);
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
         }
 
         private static string Q(string s) => $"\"{s.Replace("\"", "\"\"")}\"";

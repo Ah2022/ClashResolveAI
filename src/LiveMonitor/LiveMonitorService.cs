@@ -36,9 +36,6 @@ namespace ClashResolveAI.LiveMonitor
         internal void DocumentClosed(string key) => _listener?.DocumentClosed(key);
         public double MaximumLiveApiSliceMilliseconds=>_listener?.MaximumApiSliceMilliseconds??0;
         public LiveScanStatus? ScanStatus=>_listener?.Status;
-        internal void FullScanStarted(string key,long revision)=>_listener?.FullScanStarted(key,revision);
-        internal void FullScanEnded(Document? doc,string key,bool success,bool complete,ScanScope? scope,long revision)=>_listener?.FullScanEnded(doc,key,success,complete,scope,revision);
-        internal void RenewAfterFullScan(string key)=>_gateway?.Renew(key);
         internal void AdvanceCore(string key,long generation) {if(IsCurrent(key,generation))_listener?.Advance(key,generation);}
         internal void CheckSelectionCore() => _listener?.CheckCurrentSelection();
         internal void ExecuteQueued(UIApplication app) => _gateway?.Execute(app); // In-Revit verification only.
@@ -60,15 +57,13 @@ namespace ClashResolveAI.LiveMonitor
             var ids=Mode==MonitorMode.Trigger?new System.Collections.Generic.List<ElementId>():LiveSessionLedger.LiveIds(doc);
             if(ids.Count==0&&(_listener.Status?.QueueDepth??0)==0){ClashRadarPanel.Instance.SetScanStatus(Mode==MonitorMode.Trigger?"No pending changes":"Nothing drawn yet",true);return;}
             _listener.RecheckLedger(doc,ids);
-            if(_listener.Status?.RequiresFullScan!=true)
-                ClashRadarPanel.Instance.SetScanStatus($"Re-checking {Math.Max(ids.Count,_listener.Status?.QueueDepth??0)} session elements…",false);
+            ClashRadarPanel.Instance.SetScanStatus($"Re-checking {Math.Max(ids.Count,_listener.Status?.QueueDepth??0)} session elements…",false);
         }
         internal void CancelRecheckCore(Document doc) => _listener?.CancelChecks(doc);
         internal void ClearSessionCore(Document doc) {
             _listener?.ClearChecks(doc);LiveSessionLedger.Clear(doc);
             RadarDataStore.Instance.BeginSession(true);
-            var status=_listener?.Status;
-            ClashRadarPanel.Instance.SetScanStatus(status?.RequiresFullScan==true?status.Reason:"Live session cleared",true);
+            ClashRadarPanel.Instance.SetScanStatus("Live session cleared",true);
         }
         public void Start(UIApplication app) {
             if(IsRunning)return;
@@ -80,7 +75,6 @@ namespace ClashResolveAI.LiveMonitor
                 _gateway=new RevitLiveMonitorGateway(this);
                 _gateway.Activate(DocumentSession.CurrentKey);
                 Mode=MonitorMode.Live;IsRunning=true;_listener.Start();PublishSession();
-                if(ScanCoordinator.Busy&&ScanCoordinator.BusyDocumentKey==DocumentSession.CurrentKey)_listener.FullScanStarted(DocumentSession.CurrentKey,ScanCoordinator.StartRevision);
                 RewirePanel();Request(LiveOperation.Selection);
                 Diagnostics.Log("Document-scoped Live Monitor started");
             }catch {Stop();throw;}

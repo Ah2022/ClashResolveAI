@@ -14,7 +14,7 @@ internal static class Program
 {
     [STAThread] private static void Main()
     {
-        string folder=Path.GetFullPath("verification/phase4-radar");Directory.CreateDirectory(folder);
+        string folder=Path.GetFullPath(Environment.GetEnvironmentVariable("CLASHRESOLVE_UI_VERIFY_DIR")??"verification/phase4-radar");Directory.CreateDirectory(folder);
         Environment.SetEnvironmentVariable("CLASHRESOLVE_VERIFY_DIR",folder);
         var panel=ClashRadarPanel.Instance;
         var provider=new Autodesk.Revit.UI.DockablePaneProviderData();panel.SetupDockablePane(provider);
@@ -34,8 +34,8 @@ internal static class Program
             Check(controls.OfType<ComboBox>().Any(c=>c.Items.Count==3&&c.Items[0] is MonitorMode),"All three monitoring modes are available at width "+width);
             var bitmap=new RenderTargetBitmap(width,960,96,96,PixelFormats.Pbgra32);bitmap.Render(panel);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using(var file=File.Create(Path.Combine(folder,"radar-trigger-"+width+".png")))encoder.Save(file);
         }
-        panel.ViewModel.SetStatus(new LiveScanStatus(LiveScanOutcome.RequiresFullScan,"Full Scan required",4));Drain();
-        Check(Descendants(panel).OfType<Button>().Any(b=>(b.Content as string)=="Check Changes"&&!b.IsEnabled),"Full Scan requirement disables the real bound check button");
+        panel.ViewModel.SetStatus(new LiveScanStatus(LiveScanOutcome.RecheckingInputs,"Inputs changed; click Check Changes",4));Drain();
+        Check(Descendants(panel).OfType<Button>().Any(b=>(b.Content as string)=="Check Changes"&&b.IsEnabled),"Input refresh keeps the real bound Radar check button enabled");
         panel.ViewModel.SetSession("host",11,true,MonitorMode.Off);Drain();
         Check(Descendants(panel).OfType<TextBlock>().Any(t=>t.Text=="0 queued")&&!panel.ViewModel.Show3DCommand.CanExecute(null),"Off clears displayed queue and disables stale result commands");
         LiveDiagnostics.Recorded+=Diagnostics.RecordLive;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -72,7 +72,7 @@ namespace ClashResolveAI.LiveMonitor
             _liveText.SetBinding(TextBlock.TextProperty,new Binding(nameof(ViewModel.ModeText)));
             _scanText.SetBinding(TextBlock.TextProperty,new Binding(nameof(ViewModel.StatusText)));
             var depth=new TextBlock {FontSize=10,Foreground=TxtG,Margin=new Thickness(8,2,8,4)};depth.SetBinding(TextBlock.TextProperty,new Binding(nameof(ViewModel.QueueText)));statuses.Children.Add(depth);
-            var scopeText=new TextBlock {FontSize=10,Foreground=TxtG,Margin=new Thickness(8,0,8,4),TextWrapping=TextWrapping.Wrap};scopeText.SetBinding(TextBlock.TextProperty,new Binding(nameof(ViewModel.ScopeText)));scopeText.ToolTip="This checks affected sources under your current rules and categories. Unloaded links are excluded; whole-project completeness requires Full Scan.";statuses.Children.Add(scopeText);
+            var scopeText=new TextBlock {FontSize=10,Foreground=TxtG,Margin=new Thickness(8,0,8,4),TextWrapping=TextWrapping.Wrap};scopeText.SetBinding(TextBlock.TextProperty,new Binding(nameof(ViewModel.ScopeText)));scopeText.ToolTip="Checks affected and selected host elements against current categories and loaded links. Unloaded links are excluded.";statuses.Children.Add(scopeText);
             var diagnosticPanel=new StackPanel();var diagnosticText=new TextBlock {Foreground=TxtG,FontSize=10,Margin=new Thickness(8),TextWrapping=TextWrapping.Wrap};diagnosticText.SetBinding(TextBlock.TextProperty,new Binding(nameof(ViewModel.DiagnosticText)));diagnosticPanel.Children.Add(diagnosticText);
             var exportDiagnostics=Btn("Export diagnostics",BgCard,TxtW);exportDiagnostics.Command=ViewModel.ExportDiagnosticsCommand;diagnosticPanel.Children.Add(exportDiagnostics);
             statuses.Children.Add(new Expander {Header="Diagnostics",Foreground=TxtG,Content=diagnosticPanel,Margin=new Thickness(8,0,8,4)});Add(statuses,7);

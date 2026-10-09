@@ -61,7 +61,7 @@ namespace ClashResolveAI.LiveMonitor
         public int VisibleCount=>Rows.Count;
         public string StatusText {get;private set;}="Off";
         public string DiagnosticText {get;private set;}="No live check recorded";
-        public void SetDiagnostics(LiveDiagnosticSnapshot s){DiagnosticText=$"{s.ChangedElementCount} changed · {s.CandidateCount} candidates · {s.TestedPairCount} pairs tested\n{s.BooleanFailures} Boolean failures · {s.MissingGeometry} missing geometry · {s.UnverifiedCount} unverified\n{s.NewClashCount} new · {s.ResolvedClashCount} resolved · {s.StaleRequestCount} stale requests\nMaximum API slice {s.MaximumApiSliceMilliseconds:F1} ms · scan {s.ScanElapsedMilliseconds:F0} ms";Changed(nameof(DiagnosticText));}
+        public void SetDiagnostics(LiveDiagnosticSnapshot s){DiagnosticText=$"{s.ChangedElementCount} changed · {s.CandidateCount} candidates · {s.TestedPairCount} pairs tested\n{s.BooleanFailures} Boolean failures · {s.MissingGeometry} missing geometry · {s.UnverifiedCount} unverified\n{s.NewClashCount} new · {s.ResolvedClashCount} resolved · {s.StaleRequestCount} stale requests\nMaximum API slice {s.MaximumApiSliceMilliseconds:F1} ms · scan {s.ScanElapsedMilliseconds:F0} ms\nLive session: inputs {s.EnvironmentValidationMilliseconds:F1} ms · preparation {s.PreparationMilliseconds:F1} ms · DTO {s.DtoCaptureMilliseconds:F1} ms\nLast batch: candidates {s.CandidateMilliseconds:F1} ms · geometry {s.GeometryMilliseconds:F1} ms · Boolean {s.BooleanMilliseconds:F1} ms\nSlowest live stage: {s.SlowestStage} · {s.MaximumStageMilliseconds:F1} ms";Changed(nameof(DiagnosticText));}
         public string ScopeText {get;private set;}="Affected host elements";
         public void SetScope(string text){ScopeText=text;Changed(nameof(ScopeText));}
         public string QueueText=>$"{QueueDepth} queued";
@@ -94,7 +94,7 @@ namespace ClashResolveAI.LiveMonitor
             InspectCommand=new RadarCommand(_=>_actions.Inspect(Selected!),_=>CanInspect);
             PinCommand=new RadarCommand(p=>_actions.Pin(Selected!,(RadarPinRequest)p!),p=>CanInspect&&p is RadarPinRequest);
             IgnoreCommand=new RadarCommand(_=>{_store.IgnoreClash(Selected!);Selected=null;},_=>Selected!=null&&Selected.HostDocumentKey==_document);
-            CheckChangesCommand=new RadarCommand(_=>Submit(LiveScanAction.Ledger),_=>Running&&Mode!=MonitorMode.Off&&!Checking&&!RequiresFullScan&&!FullScanRunning);
+            CheckChangesCommand=new RadarCommand(_=>Submit(LiveScanAction.Ledger),_=>Running&&Mode!=MonitorMode.Off&&!Checking);
             CancelCommand=new RadarCommand(_=>Submit(LiveScanAction.Cancel),_=>Running&&Mode!=MonitorMode.Off&&(Checking||QueueDepth>0));
             ClearCommand=new RadarCommand(_=>Submit(LiveScanAction.Clear),_=>Running&&_document!="");
             ExportCommand=new RadarCommand(_=>_actions.Export(Rows),_=>Rows.Count>0);
@@ -125,7 +125,7 @@ namespace ClashResolveAI.LiveMonitor
             else if(!Checking)StatusText="Watching";
             NotifyState();Refresh();SelectionChanged?.Invoke(this,EventArgs.Empty);
         }
-        public void SetStatus(LiveScanStatus status){if(_disposed)return;Checking=status.Outcome==LiveScanOutcome.Checking;FullScanRunning=status.Outcome==LiveScanOutcome.PausedForFullScan;RequiresFullScan=status.RequiresFullScan;QueueDepth=status.QueueDepth;StatusText=status.Reason;NotifyState();}
+        public void SetStatus(LiveScanStatus status){if(_disposed)return;Checking=status.Outcome==LiveScanOutcome.Checking;FullScanRunning=false;RequiresFullScan=false;QueueDepth=status.QueueDepth;StatusText=status.Reason;NotifyState();}
         public void SetMessage(string message,bool complete){Checking=!complete;StatusText=message;NotifyState();}
         private void NotifyState(){foreach(var name in new[]{nameof(Mode),nameof(Running),nameof(Checking),nameof(RequiresFullScan),nameof(FullScanRunning),nameof(QueueDepth),nameof(QueueText),nameof(StatusText),nameof(ModeText),nameof(CheckLabel)})Changed(name);UpdateCommands();}
         private void Changed(string property)=>PropertyChanged?.Invoke(this,new PropertyChangedEventArgs(property));

@@ -15,13 +15,13 @@ namespace ClashResolveAI.Core
         private static long _releaseGeneration;
         private static int _releaseResumeCount;
         private static string _releaseHost="";
+        private static ElementId? _releasePipeA,_releasePipeB;
         private static void ReleaseStep(UIApplication app)
         {
             var service=LiveMonitorService.Instance;var radar=RadarDataStore.Instance;
             void Next(int step){_step=step;_next=DateTime.UtcNow.AddSeconds(3);}
             void Move(double x){using(var tx=new Transaction(_test!,"Release fixture move")){tx.Start();ElementTransformUtils.MoveElement(_test!,_moving!,new XYZ(x,0,0));tx.Commit();}}
             void Mode(MonitorMode mode){service.RequestMode(mode,DocumentSession.CurrentKey,service.SessionGeneration(DocumentSession.CurrentKey));service.ExecuteQueued(app);}
-            void Full()=>ScanCoordinator.Start(_test!,"",null,(rows,stats)=>Dashboard.ClashDashboard.Instance.MergeFullScan(rows,stats.Mode,stats.Scope));
             if(ScanCoordinator.Busy){if(DateTime.UtcNow-_next>TimeSpan.FromMinutes(2))throw new InvalidOperationException("Full Scan timed out");return;}
             if(service.ScanStatus?.Outcome==LiveScanOutcome.ProtectionPaused&&_step!=706){
                 if(++_releaseResumeCount>3)throw new InvalidOperationException("Repeated responsiveness protection pauses");
@@ -43,9 +43,9 @@ namespace ClashResolveAI.Core
                 _releaseHost=Path.Combine(_folder,"release-host.rvt");doc.SaveAs(_releaseHost,new SaveAsOptions {OverwriteExistingFile=true});doc.Close(false);
                 _test=app.OpenAndActivateDocument(_releaseHost).Document;DocumentSession.Activate(_test);
                 var warm=new ClashResolveAI.ClashEngine.ClashEngine(_test);Check(warm.RunTargetedScanWithLinks(new[]{_moving!}).Count>=3,"Native affected-source scan finds host and repeated loaded-link overlaps");
-                Full();Next(701);return;
+                Next(701);return;
             }
-            if(_step==701){Check(!ScanCoordinator.InputsStale,"Current Full Scan certifies the disposable fixture inputs");service.Start(app);app.ActiveUIDocument.Selection.SetElementIds(new[]{_moving!});service.CheckCurrentSelection();Next(702);return;}
+            if(_step==701){Check(!ScanCoordinator.Busy,"Live starts without running Full Scan on the fixture");service.Start(app);app.ActiveUIDocument.Selection.SetElementIds(new[]{_moving!});service.CheckCurrentSelection();Next(702);return;}
             if(_step==702){
                 Check(app.GetDockablePane(ClashRadarPanel.PaneId).IsShown(),"Registered Radar dockable pane opens in native Revit");
                 Check(radar.ActiveCount>=3&&radar.GetActive().All(c=>c.Verification==LiveVerificationState.Verified),"Live gateway publishes verified host and loaded-link DTOs");
@@ -76,20 +76,39 @@ namespace ClashResolveAI.Core
                 using(var tx=new Transaction(_test!,"Release global input")){tx.Start();new FilteredElementCollector(_test!).OfClass(typeof(Level)).FirstElement().Name="Release changed level";tx.Commit();}Next(710);return;
             }
             if(_step==710){
-                Check(service.ScanStatus!.RequiresFullScan&&!ScanCoordinator.Busy,"Global input edit requests Full Scan without silently scanning the project");
+                Check(!service.ScanStatus!.RequiresFullScan&&!ScanCoordinator.Busy&&ScanCoordinator.InputsStale&&radar.GetActive().Any(c=>c.Verification==LiveVerificationState.Verified),"Global input edit rechecks Radar independently while Full Scan remains stale");
                 long stale=LiveDiagnostics.Current(DocumentSession.CurrentKey).StaleRequestCount;service.RequestNavigation(_releaseDto!,NavMode.View3D);service.RequestInspection(_releaseDto!);service.ExecuteQueued(app);
                 Check(LiveDiagnostics.Current(DocumentSession.CurrentKey).StaleRequestCount>=stale+2,"Stale navigation and inspection are rejected and counted");
-                Full();Move(.1);Check(service.ScanStatus!.QueueDepth>0,"Edit during Full Scan remains queued when the full job is invalidated");Full();Next(711);return;
+                Move(.1);Check(service.ScanStatus!.QueueDepth>0,"New local edits remain queued independently of Full Scan");Next(711);return;
             }
             if(_step==711){
                 if(service.ScanStatus!.QueueDepth>0){if(DateTime.UtcNow-_next>TimeSpan.FromSeconds(30))throw new InvalidOperationException("Full Scan resume timed out");return;}
-                Check(!ScanCoordinator.InputsStale&&service.SessionGeneration(DocumentSession.CurrentKey)>_releaseGeneration,"Successful current Full Scan resumes Live with a new generation");
+                Check(ScanCoordinator.InputsStale&&service.SessionGeneration(DocumentSession.CurrentKey)==_releaseGeneration,"Live completes its own checks without certifying Full Scan inputs or changing session generation");
                 Check(radar.ActiveCount>=3&&radar.GetActive().All(c=>c.SessionGeneration==service.SessionGeneration(DocumentSession.CurrentKey)),"Resumed Radar rows are freshly validated in the new generation");
                 _releaseDto=radar.GetActive().First(c=>c.LinkInstanceA!=""||c.LinkInstanceB!="");
                 using(var tx=new Transaction(_test!,"Release move link")){tx.Start();ElementTransformUtils.MoveElement(_test!,new FilteredElementCollector(_test!).OfClass(typeof(RevitLinkInstance)).FirstElementId(),new XYZ(10,0,0));tx.Commit();}Next(712);return;
             }
             if(_step==712){
-                Check(service.ScanStatus!.RequiresFullScan,"Native link transform changes require Full Scan");bool rejected=false;try{LiveClashResolver.Resolve(_test!,_releaseDto!);}catch(InvalidOperationException){rejected=true;}Check(rejected,"A moved loaded link invalidates its old DTO identity/environment");
+                Check(!service.ScanStatus!.RequiresFullScan&&!ScanCoordinator.Busy,"Native link transform changes are handled by local Radar rechecks");bool rejected=false;try{LiveClashResolver.Resolve(_test!,_releaseDto!);}catch(InvalidOperationException){rejected=true;}Check(rejected,"A moved loaded link invalidates its old DTO identity/environment");
+                using(var tx=new Transaction(_test!,"Independent Radar temporary crossing pipes")){
+                    tx.Start();_releasePipeA=NativePipe(_test!,new XYZ(495,0,3),new XYZ(505,0,3)).Id;
+                    _releasePipeB=NativePipe(_test!,new XYZ(500,-5,3),new XYZ(500,5,3)).Id;tx.Commit();
+                }
+                Next(713);return;
+            }
+            bool PipePair(LiveClashDto c)=>(c.ElementAId==_releasePipeA?.Value&&c.ElementBId==_releasePipeB?.Value)||(c.ElementBId==_releasePipeA?.Value&&c.ElementAId==_releasePipeB?.Value);
+            if(_step==713){
+                if(service.ScanStatus!.QueueDepth>0){if(DateTime.UtcNow-_next>TimeSpan.FromSeconds(30))throw new InvalidOperationException("Pipe Radar detection timed out");return;}
+                Check(radar.GetActive().Any(c=>PipePair(c)&&c.TestType==ClashTestType.HardClash&&c.Verification==LiveVerificationState.Verified),"Temporary crossing pipes publish a verified hard clash only to Radar without Full Scan");
+                Check(!ScanCoordinator.Busy&&Dashboard.ClashDashboard.Instance.Clashes.Count==0,"Live pipe test does not start Full Scan or populate Dashboard");
+                using(var tx=new Transaction(_test!,"Independent Radar move pipe clear")){tx.Start();ElementTransformUtils.MoveElement(_test!,_releasePipeB!,new XYZ(0,0,1));tx.Commit();}
+                Next(714);return;
+            }
+            if(_step==714){
+                if(service.ScanStatus!.QueueDepth>0){if(DateTime.UtcNow-_next>TimeSpan.FromSeconds(30))throw new InvalidOperationException("Pipe Radar resolution timed out");return;}
+                Check(!radar.GetActive().Any(PipePair),"Moving the temporary pipe clear resolves its Radar clash automatically");
+                using(var tx=new Transaction(_test!,"Independent Radar remove temporary pipes")){tx.Start();_test!.Delete(_releasePipeA!);_test.Delete(_releasePipeB!);tx.Commit();}
+                Check(_test!.GetElement(_releasePipeA!)==null&&_test.GetElement(_releasePipeB!)==null,"Temporary pipe test elements are removed");
                 service.Stop();Diagnostics.FlushLive(TimeSpan.FromSeconds(2));
                 Check(File.Exists(Path.Combine(_folder,"diagnostics","live-monitor.jsonl")),"Structured diagnostic log is written outside the API callback");
                 File.WriteAllText(Path.Combine(_folder,"complete.txt"),"PASS "+Results.Count+" native release checks; version 9.4.0. Undo/Redo and large production-model acceptance require separate verification.");

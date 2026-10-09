@@ -32,7 +32,8 @@ namespace Autodesk.Revit.DB
         public bool IsValidObject=true,IsReadOnly;
         public Guid Version=Guid.NewGuid();
         public Dictionary<long,Element> Elements=new();
-        public Element? GetElement(ElementId id)=>Elements.TryGetValue(id.Value,out var value)&&value.IsValidObject?value:null;
+        public int ReadDelay,Reads;
+        public Element? GetElement(ElementId id){Reads++;if(ReadDelay>0)Thread.Sleep(ReadDelay);return Elements.TryGetValue(id.Value,out var value)&&value.IsValidObject?value:null;}
         public Element? GetElement(string uid)=>Elements.Values.FirstOrDefault(e=>e.IsValidObject&&e.UniqueId==uid);
         public static DocumentVersion GetDocumentVersion(Document doc)=>new(){VersionGUID=doc.Version};
     }
@@ -50,7 +51,8 @@ namespace Autodesk.Revit.DB
 }
 namespace Autodesk.Revit.UI
 {
-    public sealed class UIDocument {public Document Document=new();}
+    public sealed class TestSelection {public List<ElementId> Ids=new();public ICollection<ElementId> GetElementIds()=>Ids;}
+    public sealed class UIDocument {public Document Document=new();public TestSelection Selection=new();}
     public sealed class UIApplication {public UIDocument? ActiveUIDocument=new();}
 }
 namespace ClashResolveAI
@@ -106,10 +108,12 @@ namespace ClashResolveAI.ClashEngine
         public static int Jobs,Disposed;
         public static bool Infinite,Unreliable,Emit=true;
         public static int StepDelay;
+        public static int MaximumSources;
+        public static readonly HashSet<long> SeenSources=new();
         private readonly Document _doc;
         public ClashEngine(Document doc,string rules){_doc=doc;}
         public ScanJob CreateJob(IEnumerable<ElementId> ids,bool links,AppSettings? settingsSnapshot=null){
-            Jobs++;var sources=ids.ToList();var rows=new List<ClashResult>();var stats=new ScanStatistics{Scope=new ScanScope(_doc.Key),Mode=ScanMode.HardOnly};
+            Jobs++;var sources=ids.ToList();MaximumSources=Math.Max(MaximumSources,sources.Count);SeenSources.UnionWith(sources.Select(id=>id.Value));var rows=new List<ClashResult>();var stats=new ScanStatistics{Scope=new ScanScope(_doc.Key),Mode=ScanMode.HardOnly};
             IEnumerable<int> Work(){
                 if(StepDelay>0)Thread.Sleep(StepDelay);
                 while(Infinite)yield return 0;

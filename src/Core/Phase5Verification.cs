@@ -62,16 +62,16 @@ namespace ClashResolveAI.Core
                 Next(504);return;
             }
             if(_step==504){
-                Check(ScanCoordinator.InputsStale&&ReferenceEquals(service.LastStatistics,_previousLive)&&!ScanCoordinator.Busy,"Level input edit marks stale without any live or global job");
+                Check(ScanCoordinator.InputsStale&&!service.ScanStatus!.RequiresFullScan&&!ScanCoordinator.Busy,"Level input edit refreshes Radar locally while Full Scan remains stale");
                 using(var tx=new Transaction(doc,"Phase5 pipe type edit")){tx.Start();doc.GetElement(_phase5Type!).Name="Phase5 renamed bounded type";tx.Commit();}
                 Next(505);return;
             }
             if(_step==505){
                 var stats=service.LastStatistics!;
-                Check(ReferenceEquals(stats,_previousLive)&&service.ScanStatus?.RequiresFullScan==true&&!ScanCoordinator.Busy,"Type edit requires Full Scan and preserves accumulated changes without starting a partial job");
+                Check(!service.ScanStatus!.RequiresFullScan&&!ScanCoordinator.Busy,"Type edit queues independent Radar rechecks without Full Scan");
                 Check(ScanCoordinator.InputsStale,"Local type checks leave model inputs stale until Full Scan");
                 DrainUi(ClashRadarPanel.Instance);
-                Check(Descendants<TextBlock>(ClashRadarPanel.Instance).Any(t=>t.Text=="Model inputs changed, run Full Scan to re-verify"&&t.IsVisible),"Persistent nonblocking model-input banner is visible");
+                Check(!Descendants<TextBlock>(ClashRadarPanel.Instance).Any(t=>t.Text.Contains("run Full Scan")&&t.IsVisible),"Radar shows no Full Scan requirement");
                 CaptureLifecycleUi(ClashRadarPanel.Instance,"phase5-radar-banner.png");
                 File.WriteAllText(Path.Combine(_folder,"phase5-type-scan.json"),JsonConvert.SerializeObject(stats,Formatting.Indented));
                 _previousLive=stats;
@@ -79,7 +79,7 @@ namespace ClashResolveAI.Core
                 Next(506);return;
             }
             if(_step==506){
-                Check(ScanCoordinator.InputsStale&&ReferenceEquals(service.LastStatistics,_previousLive)&&!ScanCoordinator.Busy,"Family load starts no global or empty local job and retains input banner");
+                Check(ScanCoordinator.InputsStale&&!service.ScanStatus!.RequiresFullScan&&!ScanCoordinator.Busy,"Family load refreshes monitored sources without starting Full Scan");
                 Full();Next(507);return;
             }
             if(_step==507){
@@ -95,7 +95,7 @@ namespace ClashResolveAI.Core
                 Next(508);return;
             }
             if(_step==508){
-                Check(ReferenceEquals(service.LastStatistics,_previousLive)&&!service.HasPendingWork&&!ScanCoordinator.Busy&&ScanCoordinator.InputsStale,"501-instance type edit shows input banner without partial or global scan");
+                Check(!service.ScanStatus!.RequiresFullScan&&!ScanCoordinator.Busy&&ScanCoordinator.InputsStale,"501-instance type edit has no Full Scan prerequisite or global job");
                 radar.BeginSession(true);
                 Check(radar.GetVisible().Count==0,"New live session hides old live results");radar.ThisSession=false;
                 Check(radar.GetVisible().All(c=>c.Origin==ResultOrigin.Live),"All-session Radar filter still excludes Full results");

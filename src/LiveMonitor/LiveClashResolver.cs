@@ -13,9 +13,13 @@ namespace ClashResolveAI.LiveMonitor
     internal static class LiveEnvironment
     {
         public static string Capture(Document doc)
+            =>Capture(doc,false);
+        internal static string CaptureForFullScan(Document doc)
+            =>Capture(doc,true);
+        private static string Capture(Document doc,bool fullScan)
         {
             var s=AppSettings.Load();
-            var text=new StringBuilder(string.Join("|",s.RuleSetName,s.LiveMode,s.FullScanMode,s.IncludeLinkToLink,s.ScanWithinLinks,s.IncludeStructural,s.ScanLinkedModels,
+            var text=new StringBuilder(string.Join("|",s.RuleSetName,fullScan?s.FullScanMode:s.LiveMode,fullScan&&s.IncludeLinkToLink,s.ScanWithinLinks,s.IncludeStructural,s.ScanLinkedModels,
                 s.IncludeGenericModels,s.IncludeInsulation,s.ExcludeConnectedJoints,s.ExcludeNamedSupports,
                 s.MinimumOverlapMM3.ToString("R",CultureInfo.InvariantCulture),s.InsulationMM.ToString("R",CultureInfo.InvariantCulture),
                 s.MaintenanceMM.ToString("R",CultureInfo.InvariantCulture),Rules.RulesEngine.CacheKey(s.RuleSetName)));
@@ -48,7 +52,7 @@ namespace ClashResolveAI.LiveMonitor
         private static Element ResolveEndpoint(Document host,LiveElementIdentity endpoint) {
             var source=endpoint.LinkInstanceUniqueId==""?host:(host.GetElement(endpoint.LinkInstanceUniqueId) as RevitLinkInstance)?.GetLinkDocument();
             if(source==null||!source.IsValidObject||DocumentSession.Key(source)!=endpoint.DocumentKey)
-                throw new InvalidOperationException("Linked model is unavailable or has been replaced; run Full Scan");
+                throw new InvalidOperationException("Linked model is unavailable or has been replaced; reload it and re-check in Radar");
             var element=source.GetElement(endpoint.UniqueId);
             if(element==null||!element.IsValidObject||element.Id.Value!=endpoint.ElementId||element.VersionGuid.ToString()!=endpoint.VersionGuid)
                 throw new InvalidOperationException("Element identity or geometry changed; re-check before using this result");
@@ -60,7 +64,7 @@ namespace ClashResolveAI.LiveMonitor
         public static ClashResult Resolve(Document host,LiveClashDto row) {
             if(DocumentSession.Key(host)!=row.HostDocumentKey||ScanCoordinator.IsStale(row)||row.Verification!=LiveVerificationState.Verified)
                 throw new InvalidOperationException("Result is stale or unverified; re-check before navigation or inspection");
-            if(LiveEnvironment.Capture(host)!=row.EnvironmentStamp)throw new InvalidOperationException("Rules or linked-model inputs changed; run Full Scan");
+            if(LiveEnvironment.Capture(host)!=row.EnvironmentStamp)throw new InvalidOperationException("Rules or linked-model inputs changed; re-check in Radar");
             var a=ResolveEndpoint(host,row.EndpointA);var b=ResolveEndpoint(host,row.EndpointB);
             return new ClashResult {ElementA=a,ElementB=b,HostDocumentKey=row.HostDocumentKey,SessionGeneration=row.SessionGeneration,
                 GeometryRevision=row.GeometryRevision,LiveSessionId=row.LiveSessionId,Origin=row.Origin,ClashId=row.ClashId,

@@ -35,6 +35,20 @@ namespace ClashResolveAI.LiveMonitor
         public int MissingGeometry {get;}
         public int UnverifiedCount {get;}
         public double MaximumApiSliceMilliseconds {get;}
+        // Live scheduler totals are cumulative for the open session. Engine
+        // timings describe the current/last batch, copied from its existing metrics.
+        public double EnvironmentValidationMilliseconds {get;}
+        public double InputRefreshMilliseconds {get;}
+        public double PreparationMilliseconds {get;}
+        public double DtoCaptureMilliseconds {get;}
+        public double ReconciliationMilliseconds {get;}
+        public double MaximumStageMilliseconds {get;}
+        public string SlowestStage {get;}
+        public double EngineCollectionMilliseconds {get;}
+        public double CandidateMilliseconds {get;}
+        public double GeometryMilliseconds {get;}
+        public double BooleanMilliseconds {get;}
+        public double SurfaceDistanceMilliseconds {get;}
         public int ResolvedClashCount {get;}
         public int NewClashCount {get;}
         public long StaleRequestCount {get;}
@@ -50,6 +64,9 @@ namespace ClashResolveAI.LiveMonitor
             ScanElapsedMilliseconds=s.Clock?.Elapsed.TotalMilliseconds??0;QueueDepth=s.Queue;RequestQueueDepth=s.RequestQueue;ChangedElementCount=s.ChangedCount;
             CandidateCount=s.Candidates;TestedPairCount=s.Tested;BooleanFailures=s.Booleans;MissingGeometry=s.Missing;UnverifiedCount=s.Unverified;
             MaximumApiSliceMilliseconds=s.MaximumSlice;ResolvedClashCount=s.Resolved;NewClashCount=s.New;
+            EnvironmentValidationMilliseconds=s.EnvironmentMs;InputRefreshMilliseconds=s.RefreshMs;PreparationMilliseconds=s.PreparationMs;
+            DtoCaptureMilliseconds=s.DtoMs;ReconciliationMilliseconds=s.ReconciliationMs;MaximumStageMilliseconds=s.MaximumStageMs;SlowestStage=s.SlowestStage;
+            EngineCollectionMilliseconds=s.CollectionMs;CandidateMilliseconds=s.CandidateMs;GeometryMilliseconds=s.GeometryMs;BooleanMilliseconds=s.BooleanMs;SurfaceDistanceMilliseconds=s.SurfaceMs;
             StaleRequestCount=s.Stale;CoalescedRequestCount=s.Coalesced;WakeRetryCount=s.Retries;Outcome=s.Outcome;Reason=s.Reason;
         }
     }
@@ -65,6 +82,9 @@ namespace ClashResolveAI.LiveMonitor
         public Stopwatch? Clock;
         public int Queue,RequestQueue,ChangedCount,Candidates,Tested,Booleans,Missing,Unverified,Resolved,New;
         public double MaximumSlice;
+        public double EnvironmentMs,RefreshMs,PreparationMs,DtoMs,ReconciliationMs,MaximumStageMs;
+        public double CollectionMs,CandidateMs,GeometryMs,BooleanMs,SurfaceMs;
+        public string SlowestStage="";
     }
     public static class LiveDiagnostics
     {
@@ -88,8 +108,16 @@ namespace ClashResolveAI.LiveMonitor
             s.Generation=batch.SessionGeneration;s.Mode=mode;s.Batch=batch.BatchId;s.Revision=revision;s.Fingerprint=fingerprint;s.Created=batch.CreatedUtc;
             var committed=batch.Changes.Where(c=>c.Kind!=LiveChangeKind.Check).ToList();s.Changed=committed.Count==0?(DateTime?)null:committed.Min(c=>c.ChangedUtc);
             s.Started=s.First=s.Published=s.Completed=s.Terminal=null;s.Clock=null;s.Candidates=s.Tested=s.Booleans=s.Missing=s.Unverified=s.Resolved=s.New=0;s.MaximumSlice=0;s.ChangedCount=batch.Changes.Count;s.Queue=queue;s.Outcome="Preparing";s.Reason="";
+            s.CollectionMs=s.CandidateMs=s.GeometryMs=s.BooleanMs=s.SurfaceMs=0;
         });
-        internal static void Started(string key)=>Write(key,"ScanStarted",s=>{if(s.Started==null){s.Started=DateTime.UtcNow;s.Clock=Stopwatch.StartNew();}});
+        internal static void Started(string key){lock(Gate)if(Get(key).Started!=null)return;Write(key,"ScanStarted",s=>{s.Started=DateTime.UtcNow;s.Clock=Stopwatch.StartNew();});}
+        internal static void Stage(string key,string stage,double milliseconds)=>Write(key,"Stage",s=>{
+            switch(stage){case "Environment":s.EnvironmentMs+=milliseconds;break;case "InputRefresh":s.RefreshMs+=milliseconds;break;case "Preparation":s.PreparationMs+=milliseconds;break;case "DtoCapture":s.DtoMs+=milliseconds;break;case "Reconciliation":s.ReconciliationMs+=milliseconds;break;}
+            if(milliseconds>s.MaximumStageMs){s.MaximumStageMs=milliseconds;s.SlowestStage=stage;}
+        },false);
+        internal static void EngineTimings(string key,double collection,double candidates,double geometry,double booleans,double surface)=>Write(key,"EngineTimings",s=>{
+            s.CollectionMs=collection;s.CandidateMs=candidates;s.GeometryMs=geometry;s.BooleanMs=booleans;s.SurfaceMs=surface;
+        },false);
         internal static void Metrics(string key,int candidates,int tested,int booleans,int missing,int unverified,DateTime? first)=>Write(key,"Metrics",s=>{s.Candidates=candidates;s.Tested=tested;s.Booleans=booleans;s.Missing=missing;s.Unverified=unverified;s.First=s.First??first;},false);
         internal static void Finish(string key,string outcome,string reason,int queue,int added,int resolved,bool completed,bool hasResults)=>Write(key,"BatchFinished",s=>{s.Clock?.Stop();s.Terminal=DateTime.UtcNow;if(completed)s.Completed=s.Terminal;if(hasResults)s.Published=s.Terminal;s.Outcome=outcome;s.Reason=reason;s.Queue=queue;s.New=added;s.Resolved=resolved;});
         internal static void Status(string key,MonitorMode mode,LiveScanStatus status)=>Write(key,"Status",s=>{s.Mode=mode;s.Queue=status.QueueDepth;s.Outcome=status.Outcome.ToString();s.Reason=status.Reason;});

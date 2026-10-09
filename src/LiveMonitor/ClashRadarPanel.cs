@@ -265,7 +265,7 @@ namespace ClashResolveAI.LiveMonitor
             _thisSession=new CheckBox {Content="This session",Foreground=TxtW,Margin=new Thickness(4),IsChecked=ViewModel.ThisSession};
             _thisSession.Checked+=(_,__)=>{if(!_refreshing)ViewModel.ThisSession=true;};
             _thisSession.Unchecked+=(_,__)=>{if(!_refreshing)ViewModel.ThisSession=false;};filters.Children.Add(_thisSession);
-            _inputsBanner=new TextBlock {Text="Model inputs changed, run Full Scan to re-verify",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.Orange,Margin=new Thickness(8,4,8,4),Visibility=ViewModel.RequiresFullScan?Visibility.Visible:Visibility.Collapsed};
+            _inputsBanner=new TextBlock {Text="Inputs changed; re-check this Radar session",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.Orange,Margin=new Thickness(8,4,8,4),Visibility=Visibility.Collapsed};
             stack.Children.Add(filters);stack.Children.Add(_inputsBanner);bdr.Child = stack;
             return bdr;
         }
@@ -324,7 +324,7 @@ namespace ClashResolveAI.LiveMonitor
             if(clash==null){ClearPreviewImages();return;}
             if(!((UIElement)this).IsVisible){_lastSnapClashId="";return;}
             if(!ViewModel.CanInspect){_lastSnapClashId="";_inspector.Clear("Session changed · re-check before inspection");return;}
-            if(clash.Verification!=LiveVerificationState.Verified){_lastSnapClashId="";_inspector.Clear("Elements changed · re-check this session or run Full Scan");return;}
+            if(clash.Verification!=LiveVerificationState.Verified){_lastSnapClashId="";_inspector.Clear("Elements changed · re-check this Radar session");return;}
             string key=clash.NormalizedKey+":"+clash.GeometryRevision;
             if(_lastSnapClashId==key)return;
             _lastSnapClashId=key;

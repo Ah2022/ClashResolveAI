@@ -37,13 +37,9 @@ internal static class LiveReliabilityChecks
         check(bounded.Changes.Count==2&&accumulator.Count("A")==1,"Large change sets split into bounded batches without dropping the tail");
         accumulator.Restore(bounded);accumulator.Close("A");check(accumulator.Count("B")==1,"Closing one accumulator preserves other document queues");
 
-        var state=new LiveSchedulingState();state.RequireFullScan("link changed");state.Cancelled=true;state.ProtectionPaused=true;state.ResumeRequested();
-        check(!state.CanRun&&state.FullScanReason=="link changed","Manual resume cannot clear a Full Scan requirement");
-        state.BeginFullScan(5,9);check(!state.CanRun&&state.FullScanRunning,"Full Scan serializes local scheduling");
-        check(!state.EndFullScan(false,true,9)&&state.FullScanReason!="","Failed Full Scan retains the completeness requirement");
-        state.BeginFullScan(5,9);check(!state.EndFullScan(true,false,9)&&state.FullScanReason!="","Scoped Full Scan cannot clear a global completeness requirement");
-        state.BeginFullScan(5,9);check(!state.EndFullScan(true,true,10)&&state.FullScanReason!="","Superseded Full Scan cannot certify a newer document revision");
-        state.BeginFullScan(5,10);check(state.EndFullScan(true,true,10)&&state.CanRun,"Successful current full coverage resumes local scheduling");
+        var state=new LiveSchedulingState();state.Cancelled=true;state.ProtectionPaused=true;
+        check(!state.CanRun,"Live cancellation and responsiveness protection pause local work");
+        state.ResumeRequested();check(state.CanRun,"Manual Radar recheck resumes local work without Full Scan");
 
         ClashResult Row(long a=1,long b=2)=>new(){HostDocumentKey="dto",ElementAId=a,ElementBId=b,Origin=ResultOrigin.Live,Status=ClashStatus.Active,GeometryRevision=5,SessionGeneration=7};
         var original=Row();var dto=LiveDtoFixtures.From(original);

@@ -72,7 +72,7 @@ namespace ClashResolveAI.LiveMonitor
         public void ClearAll()=>_states.Clear();
     }
 
-    public enum LiveScanOutcome { Watching, Checking, Completed, Cancelled, Superseded, Unverified, RequiresFullScan, PausedForFullScan, ProtectionPaused, Failed }
+    public enum LiveScanOutcome { Watching, Checking, Completed, Cancelled, Superseded, Unverified, RequiresFullScan, PausedForFullScan, ProtectionPaused, Failed, RecheckingInputs }
     public sealed class LiveScanStatus
     {
         public LiveScanOutcome Outcome { get; }
@@ -81,20 +81,11 @@ namespace ClashResolveAI.LiveMonitor
         public LiveScanStatus(LiveScanOutcome outcome,string reason,int queueDepth){Outcome=outcome;Reason=reason;QueueDepth=queueDepth;}
         public bool RequiresFullScan=>Outcome==LiveScanOutcome.RequiresFullScan;
     }
-    // Session-level pauses are independent: Clear/Cancel cannot certify inputs.
+    // Live pauses belong only to this local scheduler.
     internal sealed class LiveSchedulingState
     {
-        public bool FullScanRunning,Cancelled,ProtectionPaused;
-        public string FullScanReason="";
-        public long FullScanWatermark,FullScanRevision;
-        public bool CanRun=>!FullScanRunning&&!Cancelled&&!ProtectionPaused&&FullScanReason=="";
-        public void RequireFullScan(string reason){FullScanReason=reason;}
+        public bool Cancelled,ProtectionPaused;
+        public bool CanRun=>!Cancelled&&!ProtectionPaused;
         public void ResumeRequested(){Cancelled=false;ProtectionPaused=false;}
-        public void BeginFullScan(long watermark,long revision){FullScanRunning=true;FullScanWatermark=watermark;FullScanRevision=revision;}
-        public bool EndFullScan(bool success,bool fullScope,long currentRevision) {
-            FullScanRunning=false;
-            if(!success||!fullScope||currentRevision!=FullScanRevision)return false;
-            FullScanReason="";ProtectionPaused=false;return true;
-        }
     }
 }
