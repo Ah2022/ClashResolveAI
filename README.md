@@ -13,7 +13,7 @@ ClashResolveAI helps BIM coordinators and MEP designers find physical clashes, i
 
 ![ClashResolveAI coordination workflow](docs/images/coordination-workflow.svg)
 
-[Step-by-step usage map](docs/USAGE_MAP.md) · [Full Scan implementation and release gates](docs/FULL_SCAN_PHASE7_8.md)
+[Quick-start manual](docs/QUICK_START.md) · [Step-by-step usage map](docs/USAGE_MAP.md) · [Full Scan implementation and release gates](docs/FULL_SCAN_PHASE7_8.md)
 
 ## What it does
 
