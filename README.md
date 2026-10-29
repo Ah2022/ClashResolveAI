@@ -26,11 +26,14 @@ ClashResolveAI helps BIM coordinators and MEP designers find physical clashes, i
 - Keeps internal-link scans, explicit link-to-link jobs and dedicated insulation clearance separate. **No automatic every-link-against-every-link scan.** Unloaded links cannot be checked.
 - Shows stage, model relationship, floor, source counts, bounding-box candidates, geometry/Boolean tests, exclusions, unknown classifications and a source-rate ETA.
 - Lets you navigate to issues in 2D/3D, inspect element and overlap geometry, and manage issue status.
-- Exports Dashboard coordination results to Excel, Word, and BCF 2.1. Radar has a separate CSV export.
+- Embeds automatic side-by-side 2D/3D previews in the Issues panel.
+- Exports the shown current/historical issue or group scope to Excel, Word and BCF 2.1. Radar has a separate CSV export.
 - Offers optional AI-assisted suggestions and RFI text. Geometry detection works without an API key.
 - Keeps saved scan versions, issue history, recurrence, owners, due dates, groups and coordination analytics. Exports respect the selected current/historical view and filters.
 
 The add-in supports coordination decisions; a scan is not a guarantee that a model is clash-free. Unsupported geometry or failed Boolean operations remain **unverified**, not confirmed hard clashes.
+
+Read the [dashboard user guide](docs/DASHBOARD_USER_GUIDE.md) and [renovation verification](docs/DASHBOARD_RENOVATION.md) for workspace details and earlier acceptance limits.
 
 ## Where it helps compared with Navisworks Manage
 

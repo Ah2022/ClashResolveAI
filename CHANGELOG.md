@@ -14,6 +14,14 @@ This is the single release history for the cleaned repository. Earlier notes are
 - Added native staged/cancellation fixtures, loaded-link benchmarks, reproducible release checks and a portable package script.
 - Expanded README with a sourced Navisworks Manage comparison and an editable visual workflow/usage guide. Production acceptance and native check status are documented separately in `docs/FULL_SCAN_PHASE7_8.md`.
 
+## 9.4.0 Full Scan dashboard renovation â€” 2026-10-07
+
+- Added immutable scan history, coverage-aware comparisons, migration backups and audited lifecycle changes.
+- Added Overview, Issues, Groups, History and Analytics with stable group identity, ownership defaults and split/merge lineage.
+- Added current/historical issue/group BCF, Excel and Word export using copied scope/evidence/workflow data.
+- Added automatic embedded 2D/3D clash previews with stale, historical and late-callback guards.
+- Passed 395 automated checks (including a private optional recorded fixture) and 168 controlled native checks, including manual Undo/Redo, linked models, failed-save rollback and full/live isolation.
+- Kept production-model performance, Word page visual QA and normal installation acceptance explicitly open. See `docs/DASHBOARD_RENOVATION.md`.
 ## 9.4.0 Live Monitor upgrade — 2026-10-06
 
 - Fixed local scan starvation when input fingerprint validation exceeded the preferred slice target. Environment checks are polled, while completed results receive fresh validation after DTO capture. The hard responsiveness limit remains enforced.

@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB;
 using ClashResolveAI.Commands;
 using ClashResolveAI.Dashboard;
 using ClashResolveAI.LiveMonitor;
