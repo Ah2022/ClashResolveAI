@@ -1,4 +1,4 @@
-﻿// Commands/Commands.cs  — v7.0
+// Commands/Commands.cs  — v7.0
 // v7.0: ResetInternal() call removed (no longer exists in LiveMonitorService).
 //
 // FIX v6.0 (LiveMonitorCommand):
@@ -53,7 +53,11 @@ namespace ClashResolveAI.Commands
     {
         public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
         {
-            var doc = data.Application.ActiveUIDocument?.Document;
+            return Run(data.Application,ref msg);
+        }
+        internal static Result Run(UIApplication application,ref string msg)
+        {
+            var doc = application.ActiveUIDocument?.Document;
             if (doc == null || doc.IsFamilyDocument) { msg = "Open a project document first."; return Result.Cancelled; }
             try
             {
@@ -61,38 +65,23 @@ namespace ClashResolveAI.Commands
                 DocumentSession.Activate(doc);
                 Session.ProjectName = doc.Title;
 
-                // ── STEP 1: Floor selection ────────────────────────────────
-                var picker = new LevelPickerDialog(doc);
-                picker.ShowDialog();
-                if (!picker.Confirmed) return Result.Cancelled;
-
-                string selectedLevelId   = picker.SelectedLevelId;    // "" = all floors
-                string selectedLevelName = picker.SelectedLevelName;   // "All Floors" or level name
-
-                // ── STEP 2: Pre-scan info dialog ───────────────────────────
-                var linkMgr       = new LinkedModelManager(doc);
-                string linkInfo   = linkMgr.GetLinksSummary();
-                string scopeLabel = string.IsNullOrEmpty(selectedLevelId)
-                    ? "All Floors (full model)"
-                    : $"Floor: {selectedLevelName} only";
-
-                var options=new FullScanOptionsDialog(s,scopeLabel,linkInfo);
-                if(options.ShowDialog()!=true)return Result.Cancelled;
-                options.Options.Apply(s,false);AppSettings.Save(s);
-
-                var progress = new ProgressDialog($"Scanning {scopeLabel}…");
+                var profiles=new ScanProfilesDialog(application,s);
+                if(profiles.ShowDialog()!=true||profiles.ApprovedPlan==null)return Result.Cancelled;
+                var plan=profiles.ApprovedPlan;
+                var preferences=AppSettings.Load();
+                ScanProfilesDialog.SaveFullPreferences(preferences,plan);AppSettings.Save(preferences);
+                var progress = new ProgressDialog("Starting reviewed Full Scan…");
                 progress.Show();
                 progress.Closed += (_,__) => ScanCoordinator.Cancel();
-                ScanCoordinator.Start(doc, selectedLevelId, Session.ActiveZone, (clashes, stats) => {
+                ScanCoordinator.Start(doc, plan, (clashes, stats) => {
                     int retained=ClashDashboard.Instance.MergeFullScan(clashes,stats.Mode,stats.Scope);
                     progress.Close();
-                    TaskDialog.Show("Scan complete",
-                        $"Hard clashes: {clashes.Count(c => c.TestType == ClashTestType.HardClash)}\n" +
-                        $"Possible hard: {clashes.Count(c => c.TestType == ClashTestType.Unverified&&c.UnverifiedReason==UnverifiedReason.SolidTest)}\n" +
-                        $"Confirmed clearance violations: {clashes.Count(c => c.TestType == ClashTestType.ClearanceClash)}\n" +
-                        $"Unverified candidates: {clashes.Count(c => c.TestType == ClashTestType.Unverified)}\n\n" +
-                        retained+" clearance rows retained from earlier scans, not re-tested.\n\n"+stats.Summary + "\n\nUnverified candidates require review; they are not confirmed clashes.");
-                }, progress.SetMessage, reason => { progress.Close(); Diagnostics.Log(reason); },options.Options.SelectedMode,options.Options.IncludeLinkToLink);
+                    DashboardCommand.EnsureApiActions();
+                    ClashDashboard.Instance.ShowOverview();
+                }, progress.SetMessage, reason => {
+                    progress.Close();Diagnostics.Log(reason);
+                    if(!reason.StartsWith("Scan cancelled",StringComparison.Ordinal)&&reason!="Project closed.")TaskDialog.Show("Scan stopped",reason);
+                });
                 return Result.Succeeded;
             }
             catch (Exception ex)
@@ -187,42 +176,18 @@ namespace ClashResolveAI.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class LiveMonitorCommand : IExternalCommand
     {
-        // FIX v6.0 (Bug 4):
-        //   ON  → Start() opens ClashRadarPanel + fires initial scan toast.
-        //   ON (panel re-open) → RewirePanel() re-attaches live ExternalEvents
-        //     to a fresh panel singleton (user closed and clicked again while
-        //     monitor was already running).
-        //   OFF → Stop() marks panel as idle; user keeps the list visible.
+        // The ribbon opens the registered pane. Monitoring mode is selected
+        // inside Radar; reopening a hidden pane never creates another session.
         public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
         {
             try
             {
                 var svc = LiveMonitorService.Instance;
 
-                if (!App.MonitorActive)
-                {
-                    // Start fresh monitor session
-                    svc.Start(data.Application);
-                    App.MonitorActive = true;
-                    App.RefreshMonitorButton();
-                }
-                else
-                {
-                    // Monitor already running — check if panel is visible
-                    if (!ClashRadarPanel.IsVisible)
-                    {
-                        // Panel was closed — just re-wire and show it, no restart needed
-                        svc.RewirePanel();
-                        // Don't toggle MonitorActive; session continues
-                    }
-                    else
-                    {
-                        // Panel visible and button clicked again — stop the monitor
-                        svc.Stop();
-                        App.MonitorActive = false;
-                        App.RefreshMonitorButton();
-                    }
-                }
+                if(!svc.IsRunning)svc.Start(data.Application);
+                else svc.RewirePanel();
+                App.MonitorActive=svc.Mode!=MonitorMode.Off;
+                App.RefreshMonitorButton();
                 return Result.Succeeded;
             }
             catch (Exception ex) { msg = ex.Message; return Result.Failed; }
@@ -248,10 +213,25 @@ namespace ClashResolveAI.Commands
         private static ExternalEvent?          _show2DEvent;
         private static ExternalEvent?          _show3DEvent;
 
-        public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
+        private static DashboardHistoryNavigationHandler? _historyNavigation;
+        private static ExternalEvent? _historyEvent;
+        private static DashboardInspectHandler? _inspectHandler;
+        private static ExternalEvent? _inspectEvent;
+        private static DashboardPreviewHandler? _previewHandler;
+        private static ExternalEvent? _previewEvent;
+        private static DashboardRunScanHandler? _scanHandler;
+        private static ExternalEvent? _scanEvent;
+        internal static void ShutdownApiActions()
         {
-            try
-            {
+            _previewEvent?.Dispose();_previewEvent=null;_previewHandler=null;
+            _historyEvent?.Dispose();_historyEvent=null;_historyNavigation=null;
+            _show2DEvent?.Dispose();_show3DEvent?.Dispose();_scanEvent?.Dispose();_inspectEvent?.Dispose();
+            _show2DEvent=null;_show3DEvent=null;_scanEvent=null;_inspectEvent=null;
+            _show2DHandler=null;_show3DHandler=null;_scanHandler=null;_inspectHandler=null;
+            ClashDashboard.Instance.CloseWindow();
+        }
+        internal static void EnsureApiActions()
+        {
                 // Create ExternalEvent handlers once (lazy init — persists for session)
                 if (_show2DEvent == null)
                 {
@@ -276,6 +256,26 @@ namespace ClashResolveAI.Commands
                     _show3DEvent!.Raise();
                 };
 
+            if(_historyEvent==null){_historyNavigation=new DashboardHistoryNavigationHandler();_historyEvent=ExternalEvent.Create(_historyNavigation);}
+            ClashDashboard.Instance.HistoryNavigationAction=row=>{_historyNavigation!.Pending=row;_historyEvent.Raise();};
+            if(_inspectEvent==null){_inspectHandler=new DashboardInspectHandler();_inspectEvent=ExternalEvent.Create(_inspectHandler);}
+            _inspectHandler!.RaisePin=(row,scene,preferences)=>{_inspectHandler.Pending=row;_inspectHandler.PinScene=scene;_inspectHandler.PinPreferences=preferences;_inspectEvent!.Raise();};
+            ClashDashboard.Instance.InspectAction=row=>{_inspectHandler.Pending=row;_inspectEvent!.Raise();};
+            if(_previewEvent==null){_previewHandler=new DashboardPreviewHandler();_previewEvent=ExternalEvent.Create(_previewHandler);}
+            ClashDashboard.Instance.PreviewAction=(row,done)=>{_previewHandler!.Pending=row;_previewHandler.Completed=done;if(_previewEvent.Raise()==ExternalEventRequest.Denied){_previewHandler.Pending=null;_previewHandler.Completed=null;done(null,"Revit preview queue is unavailable. Reload preview.");}};
+            ClashDashboard.Instance.PinPreviewAction=(row,scene,preferences)=>_inspectHandler.RaisePin?.Invoke(row,scene,preferences);
+            if(_scanEvent==null){_scanHandler=new DashboardRunScanHandler();_scanEvent=ExternalEvent.Create(_scanHandler);}
+            ClashDashboard.Instance.RunScanAction=()=>{_scanHandler!.DocumentKey=DocumentSession.CurrentKey;_scanEvent!.Raise();};
+        }
+
+        public Result Execute(ExternalCommandData data, ref string msg, ElementSet els)
+        {
+            try
+            {
+                var doc=data.Application.ActiveUIDocument?.Document;
+                if(doc==null||doc.IsFamilyDocument){msg="Open a project document first.";return Result.Cancelled;}
+                DocumentSession.Activate(doc);
+                EnsureApiActions();
                 ClashDashboard.Instance.ShowWindow();
                 return Result.Succeeded;
             }
@@ -457,7 +457,7 @@ namespace ClashResolveAI.Commands
         private readonly System.Windows.Controls.ProgressBar _bar;
         public ProgressDialog(string title)
         {
-            Title=title;Width=580;Height=235;MinWidth=450;ResizeMode=ResizeMode.CanResize;
+            Title=title;Width=700;Height=440;MinWidth=560;MinHeight=380;ResizeMode=ResizeMode.CanResize;
             WindowStartupLocation=WindowStartupLocation.CenterScreen;
             Background=new WpfBrush(WpfColor.FromRgb(15,20,32));
             var root=new System.Windows.Controls.Grid { Margin=new Thickness(20) };
@@ -503,7 +503,7 @@ namespace ClashResolveAI.Commands
                 Margin = new Thickness(0, 4, 0, 12) };
             sp.Children.Add(apiBox);
 
-            sp.Children.Add(Lbl("Active Rule Set", 11));
+            sp.Children.Add(Lbl("Live Monitor rule set", 11));
             var ruleCombo = new WpfComboBox { Height = 28, Margin = new Thickness(0, 4, 0, 12) };
             foreach (var rs in RulesEngine.GetAvailableRuleSets()) ruleCombo.Items.Add(rs);
             ruleCombo.SelectedItem = s.RuleSetName;
@@ -511,27 +511,26 @@ namespace ClashResolveAI.Commands
 
             var linksCheck = new CheckBox
             {
-                Content = "Scan Linked Models", IsChecked = s.ScanLinkedModels,
+                Content = "Live Monitor: scan linked models", IsChecked = s.ScanLinkedModels,
                 Foreground = W(), Margin = new Thickness(0, 0, 0, 12)
             };
             sp.Children.Add(linksCheck);
             var scanOptions=new ScanOptionsPanel(s,true);sp.Children.Add(scanOptions);
-            linksCheck.Checked+=(_,__)=>scanOptions.LinkToLink.IsEnabled=true;
-            linksCheck.Unchecked+=(_,__)=>scanOptions.LinkToLink.IsEnabled=false;
+            var fullLinks=new CheckBox {Content="Full Scan: select loaded links by default",IsChecked=s.FullScanLinkedModels,Foreground=W(),Margin=new Thickness(0,0,0,12)};
+            sp.Children.Add(fullLinks);fullLinks.Checked+=(_,__)=>scanOptions.SetLinksEnabled(true);fullLinks.Unchecked+=(_,__)=>scanOptions.SetLinksEnabled(false);
             TextBox Number(string label,double value){sp.Children.Add(Lbl(label));var box=new TextBox{Text=value.ToString(System.Globalization.CultureInfo.InvariantCulture),Height=26,Margin=new Thickness(0,2,0,8)};sp.Children.Add(box);return box;}
             CheckBox Flag(string label,bool value){var box=new CheckBox{Content=label,IsChecked=value,Foreground=W(),Margin=new Thickness(0,2,0,8)};sp.Children.Add(box);return box;}
-            var overlap=Number("Minimum confirmed overlap (mm³)",s.MinimumOverlapMM3);
-            var insulation=Number("Minimum clearance / insulation allowance (mm)",s.InsulationMM);
-            var maintenance=Number("Maintenance clearance (mm)",s.MaintenanceMM);
+            var overlap=Number("Live Monitor: minimum confirmed overlap (mm³)",s.MinimumOverlapMM3);
+            var insulation=Number("Live Monitor: minimum clearance / insulation allowance (mm)",s.InsulationMM);
+            var maintenance=Number("Live Monitor: maintenance clearance (mm)",s.MaintenanceMM);
             var slice=Number("Live work slice target (5–40 ms)",s.LiveSliceMilliseconds);
             var debounce=Number("Delay after modeling change (100–2000 ms)",s.LiveDebounceMilliseconds);
-            var within=Flag("Scan internal clashes within linked models",s.ScanWithinLinks);
             var edited=Flag("Include edited elements in the live session",s.TrackEditedElements);
-            var generic=Flag("Include generic models and specialty equipment",s.IncludeGenericModels);
-            var insulated=Flag("Include insulation and lining geometry",s.IncludeInsulation);
-            var supports=Flag("Exclude families by support/hanger name (may hide collisions)",s.ExcludeNamedSupports);
-            var joints=Flag("Exclude directly connected joints",s.ExcludeConnectedJoints);
-            var structural=Flag("Include structure",s.IncludeStructural);
+            var generic=Flag("Live Monitor: include generic models and specialty equipment",s.IncludeGenericModels);
+            var insulated=Flag("Live Monitor: include insulation and lining geometry",s.IncludeInsulation);
+            var supports=Flag("Live Monitor: exclude construction aids and support families",s.ExcludeNamedSupports);
+            var joints=Flag("Live Monitor: exclude directly connected joints",s.ExcludeConnectedJoints);
+            var structural=Flag("Live Monitor: include structure",s.IncludeStructural);
             var toast=Flag("Show live notifications",s.ShowToast);
 
 
@@ -564,12 +563,13 @@ namespace ClashResolveAI.Commands
                 double Read(TextBox box)=>double.Parse(box.Text,System.Globalization.CultureInfo.InvariantCulture);
                     s.MinimumOverlapMM3=Math.Max(0.001,Read(overlap));s.InsulationMM=Math.Max(0,Read(insulation));s.MaintenanceMM=Math.Max(0,Read(maintenance));
                     s.LiveSliceMilliseconds=(int)Math.Max(5,Math.Min(40,Read(slice)));s.LiveDebounceMilliseconds=(int)Math.Max(100,Math.Min(2000,Read(debounce)));
-                s.ScanWithinLinks=within.IsChecked==true;s.IncludeGenericModels=generic.IsChecked==true;s.IncludeInsulation=insulated.IsChecked==true;
+                s.IncludeGenericModels=generic.IsChecked==true;s.IncludeInsulation=insulated.IsChecked==true;
                 s.TrackEditedElements=edited.IsChecked==true;
                 s.ExcludeNamedSupports=supports.IsChecked==true;s.ExcludeConnectedJoints=joints.IsChecked==true;s.IncludeStructural=structural.IsChecked==true;s.ShowToast=toast.IsChecked==true;
                 s.RuleSetName=ruleCombo.SelectedItem as string??"DefaultRules";
                 s.OpenAiApiKey     = apiBox.Password;
                 s.ScanLinkedModels = linksCheck.IsChecked == true;
+                s.FullScanLinkedModels=fullLinks.IsChecked==true;
                 scanOptions.Apply(s,true);
                 AppSettings.Save(s);
                 if (ruleCombo.SelectedItem is string rs) Session.RuleSetName = rs;

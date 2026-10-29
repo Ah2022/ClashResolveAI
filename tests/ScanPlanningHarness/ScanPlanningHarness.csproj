@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Compile Include="../RevitStubs.cs" Link="RevitStubs.cs" />
+    <Compile Include="../../src/Core/Models.cs" Link="Models.cs" />
+    <Compile Include="../../src/Core/ClashIdentity.cs" Link="ClashIdentity.cs" />
+    <Compile Include="../../src/Core/ResultLifecycle.cs" Link="ResultLifecycle.cs" />
+    <Compile Include="../../src/Core/ScanPlan.cs" Link="ScanPlan.cs" />
+    <Compile Include="../../src/Core/ScanStaging.cs" Link="ScanStaging.cs" />
+    <Compile Include="../../src/Core/ElementClassification.cs" Link="ElementClassification.cs" />
+    <Compile Include="../../src/Core/CompiledPairPolicy.cs" Link="CompiledPairPolicy.cs" />
+    <Compile Include="../../src/Core/ProjectClassificationStore.cs" Link="ProjectClassificationStore.cs" />
+    <Compile Include="../../src/Core/ClassificationReviewModel.cs" Link="ClassificationReviewModel.cs" />
+    <Compile Include="../../src/Core/ScanProfiles.cs" Link="ScanProfiles.cs" />
+    <Compile Include="../../src/Core/ScanSpatialScope.cs" Link="ScanSpatialScope.cs" />
+    <Compile Include="../../src/Core/ScanEstimate.cs" Link="ScanEstimate.cs" />
+    <Compile Include="../../src/BimEngine/Spatial/AABB.cs" Link="AABB.cs" />
+    <Compile Include="../../src/BimEngine/Spatial/Octree.cs" Link="Octree.cs" />
+    <Compile Include="../../src/Rules/RuleModels.cs" Link="RuleModels.cs" />
+    <Compile Include="../../src/Settings.cs" Link="Settings.cs" />
+  </ItemGroup>
+</Project>

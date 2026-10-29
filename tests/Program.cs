@@ -111,5 +111,8 @@ Check(profileStats.Summary.Contains("HardOnly")&&profileStats.Summary.Contains("
 Phase2Checks.Run(Check);
 Phase4Checks.Run(Check);
 Phase5Checks.Run(Check);
+LiveGatewayChecks.Run(Check);
+LiveReliabilityChecks.Run(Check);
+LiveDiagnosticsChecks.Run(Check);
 Console.WriteLine($"{passed} regression checks passed.");
 

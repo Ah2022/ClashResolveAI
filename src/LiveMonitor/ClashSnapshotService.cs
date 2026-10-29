@@ -21,6 +21,8 @@ namespace ClashResolveAI.LiveMonitor
     public class ClashSnapshotResult
     {
         public string  ClashId { get; set; } = "";
+        public string DocumentKey { get; set; } = "";
+        public long SessionGeneration { get; set; }
         public string? Path3D  { get; set; }
         public string? Path2D  { get; set; }
         public string  Error   { get; set; } = "";
@@ -49,35 +51,23 @@ namespace ClashResolveAI.LiveMonitor
         }
     }
 
-    // ── IExternalEventHandler wrapper ─────────────────────────────────────
-    // Raised by the panel row on UI-thread click; executes on Revit API thread.
+    // ── Gateway-owned API helper ─────────────────────────────────────
+    // Called only after the gateway validates the captured document/session.
 
-    public class ClashSnapshotHandler : IExternalEventHandler
+    internal sealed class ClashSnapshotHandler
     {
-        private ClashResult? _pending;
         private readonly Dictionary<string,ClashSnapshotResult> _cache=new Dictionary<string,ClashSnapshotResult>();
-        private readonly object _pendLock = new object();
-
-        public void RequestSnapshot(ClashResult clash)
+        internal void Capture(UIApplication app,ClashResult clash,Action<ClashSnapshotResult> publish)
         {
-            lock (_pendLock) _pending = clash;
-        }
-
-        public void Execute(UIApplication app)
-        {
-            ClashResult? clash;
-            lock (_pendLock) { clash = _pending; _pending = null; }
-            if (clash == null) return;
-
-            string key=clash.ClashId+":"+clash.GeometryRevision;
-            if(_cache.TryGetValue(key,out var cached)&&File.Exists(cached.Path3D)&&File.Exists(cached.Path2D)){ClashSnapshotStore.Instance.Publish(cached);return;}
+            string key=clash.HostDocumentKey+":"+clash.NormalizedKey+":"+clash.GeometryRevision;
+            if(_cache.TryGetValue(key,out var cached)&&File.Exists(cached.Path3D)&&File.Exists(cached.Path2D)){publish(cached);return;}
             var result = ClashSnapshotService.GenerateSnapshots(app, clash);
             if(_cache.Count>=32)_cache.Clear();
             _cache[key]=result;
-            ClashSnapshotStore.Instance.Publish(result);
+            publish(result);
         }
 
-        public string GetName() => "ClashResolveAI_SnapshotCapture";
+
     }
 
     // ── Core service ──────────────────────────────────────────────────────

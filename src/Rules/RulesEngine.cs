@@ -30,30 +30,6 @@ namespace ClashResolveAI.Rules
     //  RULE DATA MODEL
     // ══════════════════════════════════════════════════════════════════════
 
-    public class ClashRule
-    {
-        [JsonProperty("clearance_mm")]  public double   ClearanceMM  { get; set; } = 50;
-        [JsonProperty("priority")]      public string   Priority     { get; set; } = "Medium";
-        [JsonProperty("severity")]      public string   Severity     { get; set; } = "Hard";
-        [JsonProperty("moving")]        public string   Moving       { get; set; } = "auto";
-        [JsonProperty("note")]          public string   Note         { get; set; } = "";
-        [JsonProperty("code_ref")]      public string   CodeRef      { get; set; } = "";
-        [JsonProperty("ignore")]        public bool     Ignore       { get; set; } = false;
-    }
-
-    public class RuleSet
-    {
-        [JsonProperty("name")]          public string Name         { get; set; } = "Default";
-        [JsonProperty("version")]       public string Version      { get; set; } = "1.0";
-        [JsonProperty("project_type")]  public string ProjectType  { get; set; } = "Generic";
-        [JsonProperty("rules")]
-        public Dictionary<string, ClashRule> Rules { get; set; } = new Dictionary<string, ClashRule>();
-        [JsonProperty("discipline_pairs")]
-        public Dictionary<string, ClashRule> DisciplinePairs { get; set; } = new Dictionary<string, ClashRule>();
-        [JsonProperty("category_pairs")]
-        public Dictionary<string, ClashRule> CategoryPairs   { get; set; } = new Dictionary<string, ClashRule>();
-    }
-
     // ══════════════════════════════════════════════════════════════════════
     //  RULES ENGINE
     // ══════════════════════════════════════════════════════════════════════
@@ -212,6 +188,24 @@ namespace ClashResolveAI.Rules
         public double MaximumClearanceFt => Math.Max(0.5, _ruleSet.Rules.Values.Concat(_ruleSet.DisciplinePairs.Values).Concat(_ruleSet.CategoryPairs.Values).Select(r => Math.Max(0, r.ClearanceMM) / 304.8).DefaultIfEmpty(0).Max());
 
         public string CurrentRuleSetName => _ruleSet.Name;
+        internal string SnapshotContent => JsonConvert.SerializeObject(_ruleSet);
+        private RulesEngine(RuleSet snapshot) { _ruleSet=snapshot; }
+        internal static RulesEngine FromSnapshot(string json) => new RulesEngine(
+            JsonConvert.DeserializeObject<RuleSet>(json) ?? throw new ArgumentException("Invalid scan rule snapshot."));
+
+        // Generic fallback alone does not require model-sized envelope categories.
+        internal IReadOnlyList<long> RequiredEnvelopeCategories()
+        {
+            var categories=new Dictionary<BuiltInCategory,string[]> {
+                {BuiltInCategory.OST_Walls,new[]{"Walls","Wall"}},
+                {BuiltInCategory.OST_Floors,new[]{"Floors","Floor"}},
+                {BuiltInCategory.OST_Ceilings,new[]{"Ceilings","Ceiling"}}
+            };
+            return categories.Where(c=>_ruleSet.CategoryPairs.Any(p=>!p.Value.Ignore &&
+                p.Key.Split('|').Any(k=>k==((long)c.Key).ToString() || c.Value.Any(n=>n.Equals(k,StringComparison.OrdinalIgnoreCase)))) ||
+                _ruleSet.Rules.Any(p=>!p.Value.Ignore && c.Value.Any(n=>p.Key.EndsWith("_vs_"+n.TrimEnd('s'),StringComparison.OrdinalIgnoreCase))))
+                .Select(c=>(long)c.Key).ToArray();
+        }
         public string CurrentProjectType  => _ruleSet.ProjectType;
 
         private static RuleSet LoadRuleSet(string name)

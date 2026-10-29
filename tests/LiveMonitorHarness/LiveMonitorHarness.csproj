@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/LiveMonitor/LiveDiagnostics.cs" Link="LiveDiagnostics.cs" />
+    <Compile Include="..\..\src\LiveMonitor\ClashRadarViewModel.cs" Link="ClashRadarViewModel.cs" />
+    <Compile Include="..\..\src\Inspection\InspectionScene.cs" Link="InspectionScene.cs" />
+    <Compile Include="..\..\src\LiveMonitor\MonitorMode.cs" Link="MonitorMode.cs" />
+    <Compile Include="..\..\src\LiveMonitor\ChangeAccumulator.cs" Link="ChangeAccumulator.cs" />
+    <Compile Include="..\..\src\LiveMonitor\LiveClashDto.cs" Link="LiveClashDto.cs" />
+    <Compile Include="..\..\src\LiveMonitor\LiveClashResolver.cs" Link="LiveClashResolver.cs" />
+    <Compile Include="..\..\src\LiveMonitor\LiveScanScheduler.cs" Link="LiveScanScheduler.cs" />
+    <Compile Include="..\..\src\Engine\ScanJob.cs" Link="ScanJob.cs" />
+    <Compile Include="..\..\src\Core\Models.cs" Link="Models.cs" />
+    <Compile Include="..\..\src\Core\ClashIdentity.cs" Link="ClashIdentity.cs" />
+    <Compile Include="..\..\src\Core\ResultLifecycle.cs" Link="ResultLifecycle.cs" />
+    <Compile Include="..\..\src\Core\LiveSessionState.cs" Link="LiveSessionState.cs" />
+    <Compile Include="..\..\src\LiveMonitor\RadarDataStore.cs" Link="RadarDataStore.cs" />
+  </ItemGroup>
+</Project>

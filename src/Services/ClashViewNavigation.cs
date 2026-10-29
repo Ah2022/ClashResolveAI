@@ -10,7 +10,7 @@ namespace ClashResolveAI.Services
     internal static class ClashViewNavigation
     {
         private static int _request;
-        public static long Show(UIApplication app, ClashResult clash, bool threeD)
+        public static long Show(UIApplication app, ClashResult clash, bool threeD, Func<bool>? liveRequestValid = null)
         {
             var ui = app.ActiveUIDocument;
             var doc = ui?.Document;
@@ -83,7 +83,7 @@ namespace ClashResolveAI.Services
                 try
                 {
                     var current = app.ActiveUIDocument;
-                    if (request != _request || DateTime.UtcNow > deadline || current == null || !DocumentSession.Matches(clash, current.Document))
+                    if (request != _request || liveRequestValid?.Invoke()==false || DateTime.UtcNow > deadline || current == null || !DocumentSession.Matches(clash, current.Document))
                     { app.Idling -= complete; return; }
                     if (current.ActiveView?.Id.Value != viewId) { args.SetRaiseWithoutDelay(); return; }
                     app.Idling -= complete;

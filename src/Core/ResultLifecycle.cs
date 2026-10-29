@@ -9,9 +9,58 @@ namespace ClashResolveAI.Core
     public sealed class ScanScope
     {
         private readonly string _document;
+        private Func<long,string,long,string,bool>? _pairRestriction;
+        private object? _pairRestrictionDescription;
+        public void RestrictPairs(Func<long,string,long,string,bool> predicate,object description){_pairRestriction=predicate;_pairRestrictionDescription=description;}
+        private readonly HashSet<long> _unreliableHost=new HashSet<long>();
         private readonly HashSet<string> _missingPairs=new HashSet<string>();
         private readonly Dictionary<string,HashSet<long>> _sources=new Dictionary<string,HashSet<long>>();
         private readonly Dictionary<string,HashSet<string>> _targets=new Dictionary<string,HashSet<string>>();
+        private bool _restrictEligibility;
+        private readonly Dictionary<string,HashSet<long>> _eligible=new Dictionary<string,HashSet<long>>();
+        private bool _restrictPartitions;
+        private readonly Dictionary<string,Dictionary<long,string>> _partitions=new Dictionary<string,Dictionary<long,string>>();
+        private readonly Dictionary<string,HashSet<string>> _partitionTargets=new Dictionary<string,HashSet<string>>();
+        private readonly Dictionary<string,HashSet<string>> _clearancePartitionTargets=new Dictionary<string,HashSet<string>>();
+        public void RestrictToPartitions()=>_restrictPartitions=true;
+        public void NotePartition(long id,string link,string partition)
+        {
+            if(!_partitions.TryGetValue(link,out var elements))_partitions[link]=elements=new Dictionary<long,string>();
+            elements[id]=partition;
+        }
+        private static string PartitionRelationship(string source,string target,string partition)=>Uri.EscapeDataString(source)+"|"+Uri.EscapeDataString(target)+"|"+partition;
+        public void AllowTargetPartition(string sourceLink,string targetLink,string sourcePartition,string targetPartition,bool clearance=true)
+        {
+            string key=PartitionRelationship(sourceLink,targetLink,sourcePartition);
+            if(!_partitionTargets.TryGetValue(key,out var allowed))_partitionTargets[key]=allowed=new HashSet<string>();
+            allowed.Add(targetPartition);
+            if(clearance) {
+                if(!_clearancePartitionTargets.TryGetValue(key,out var clear))_clearancePartitionTargets[key]=clear=new HashSet<string>();
+                clear.Add(targetPartition);
+            }
+        }
+        private bool PartitionCovered(long source,string sourceLink,long target,string targetLink,bool clearance) => !_restrictPartitions ||
+            (_partitions.TryGetValue(sourceLink,out var sources)&&sources.TryGetValue(source,out var sourcePart)&&
+             _partitions.TryGetValue(targetLink,out var targets)&&targets.TryGetValue(target,out var targetPart)&&
+             (clearance?_clearancePartitionTargets:_partitionTargets).TryGetValue(PartitionRelationship(sourceLink,targetLink,sourcePart),out var allowed)&&allowed.Contains(targetPart));
+        public void RestrictToEligibleElements() => _restrictEligibility=true;
+        public void NoteEligible(long id,string link)
+        {
+            if(!_eligible.TryGetValue(link,out var ids))_eligible[link]=ids=new HashSet<long>();
+            ids.Add(id);
+        }
+        private bool Eligible(long id,string link) => !_restrictEligibility || (_eligible.TryGetValue(link,out var ids)&&ids.Contains(id));
+        internal string PublishedScanId="";
+        internal int PublishedRetainedClearance=0;
+        public object Snapshot() => new {
+            DocumentKey=_document,
+            Sources=_sources.OrderBy(p=>p.Key,StringComparer.Ordinal).ToDictionary(p=>p.Key,p=>p.Value.OrderBy(id=>id).ToArray()),
+            TargetLinks=_targets.OrderBy(p=>p.Key,StringComparer.Ordinal).ToDictionary(p=>p.Key,p=>p.Value.OrderBy(k=>k,StringComparer.Ordinal).ToArray()),
+            UnreliableHost=_unreliableHost.OrderBy(id=>id).ToArray(),MissingPairs=_missingPairs.OrderBy(k=>k,StringComparer.Ordinal).ToArray(),
+            RestrictEligibility=_restrictEligibility,EligibleElements=_eligible.ToDictionary(p=>p.Key,p=>p.Value.OrderBy(id=>id).ToArray()),
+            RestrictPartitions=_restrictPartitions,ElementPartitions=_partitions,AllowedTargetPartitions=_partitionTargets,ClearanceTargetPartitions=_clearancePartitionTargets,
+            PairRestriction=_pairRestrictionDescription
+        };
         public ScanScope(string document="") { _document=document; }
         public void Note(long source,string sourceLink,string targetLink)
         {
@@ -21,10 +70,18 @@ namespace ClashResolveAI.Core
         }
         private bool Covers(long id,string link,string target)=>_sources.TryGetValue(link,out var ids)&&ids.Contains(id)&&_targets[link].Contains(target);
         public void MissingPair(string key)=>_missingPairs.Add(key);
+        public void MissingSource(long id,string link){if(link=="")_unreliableHost.Add(id);}
+        public bool IsHostReliable(long id)=>_pairRestriction==null&&CoversHost(id)&&!_unreliableHost.Contains(id);
+        private bool ReliableCovers(long id,string link,string target)=>(link!=""||!_unreliableHost.Contains(id))&&Covers(id,link,target);
+        public bool ContainsPair(string document,long a,string linkA,long b,string linkB,string legacyKey,bool requiresClearance=false)=>
+            !_missingPairs.Contains(legacyKey)&&(_document==""||_document==document)&&
+            (_pairRestriction==null||_pairRestriction(a,linkA,b,linkB))&&
+            Eligible(a,linkA)&&Eligible(b,linkB)&&
+            ((ReliableCovers(a,linkA,linkB)&&PartitionCovered(a,linkA,b,linkB,requiresClearance))||(ReliableCovers(b,linkB,linkA)&&PartitionCovered(b,linkB,a,linkA,requiresClearance)));
         public bool CoversHost(long id)=>_sources.TryGetValue("",out var ids)&&ids.Contains(id);
         public bool IsReliable(ClashResult c)=>!_missingPairs.Contains(c.NormalizedKey);
-        public bool Contains(ClashResult c)=>IsReliable(c)&&(_document==""||c.HostDocumentKey==_document)&&
-            (Covers(c.ElementAId,c.LinkInstanceA,c.LinkInstanceB)||Covers(c.ElementBId,c.LinkInstanceB,c.LinkInstanceA));
+        public bool Contains(ClashResult c)=>ContainsPair(c.HostDocumentKey,c.ElementAId,c.LinkInstanceA,c.ElementBId,c.LinkInstanceB,c.NormalizedKey,
+            c.TestType==ClashTestType.ClearanceClash||(c.TestType==ClashTestType.Unverified&&c.UnverifiedReason!=UnverifiedReason.SolidTest));
     }
     public sealed class MergeOutcome
     {

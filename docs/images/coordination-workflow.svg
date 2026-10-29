@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1160" viewBox="0 0 1440 1160" role="img" aria-labelledby="title desc">
+ <title id="title">ClashResolveAI: from modelling feedback to coordination review</title>
+ <desc id="desc">Open Revit and load intended links. Full Scan follows profile, scope, classification, estimate, reviewed jobs and Dashboard. Live Monitor follows Live or Trigger, local changes and Clash Radar. Fix the model and recheck; only Full Scan updates Dashboard. Detailed saves hard results before localized clearance.</desc>
+ <defs>
+  <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6f89a9"/></marker>
+  <style>text{font-family:Segoe UI,Arial,sans-serif;fill:#e8f0fa}.muted{fill:#a9bdd4;font-size:18px}.small{font-size:17px}.label{font-size:22px;font-weight:600}.step{font-size:21px;font-weight:600}.line{fill:none;stroke:#6f89a9;stroke-width:3;marker-end:url(#arrow)}.card{fill:#162941;stroke:#35516e;stroke-width:1.5}.green{fill:#132f30;stroke:#346662;stroke-width:1.5}</style>
+ </defs>
+ <rect width="1440" height="1160" rx="26" fill="#0b1727"/>
+ <text x="64" y="65" font-size="34" font-weight="700">ClashResolveAI</text>
+ <text x="64" y="102" class="muted">Two connected workflows. Clear scope. Evidence before decisions.</text>
+ <rect x="64" y="130" width="1312" height="72" rx="16" fill="#243d5a"/>
+ <text x="720" y="174" text-anchor="middle" class="label">Open the Revit host + load the links you intend to coordinate</text>
+ <path d="M420 202V238" class="line"/><path d="M1090 202V238" class="line"/>
+ <text x="64" y="265" fill="#72b9ff" class="label">COORDINATOR · FULL SCAN</text>
+ <text x="878" y="265" fill="#67d6c4" class="label">DESIGNER · LIVE MONITOR</text>
+ <rect x="64" y="287" width="724" height="103" rx="16" class="card"/>
+ <text x="88" y="322" class="step">1  Choose a profile and coordination area</text>
+ <text x="88" y="354" class="muted">Quick / Detailed / Advanced · floor or bounded zones</text>
+ <text x="88" y="379" class="small">Select loaded link instances; cross-link pairs are explicit.</text>
+ <path d="M426 390V416" class="line"/>
+ <rect x="64" y="422" width="724" height="99" rx="16" class="card"/>
+ <text x="88" y="459" class="step">2  Review classification and project mappings</text>
+ <text x="88" y="492" class="muted">Resolve Unknown families · check confidence · exclude aids</text>
+ <path d="M426 521V547" class="line"/>
+ <rect x="64" y="553" width="724" height="109" rx="16" class="card"/>
+ <text x="88" y="589" class="step">3  Calculate and review the workload</text>
+ <text x="88" y="622" class="muted">Elements · allowed pairs · box candidates · duration range</text>
+ <text x="88" y="647" class="small">Remove expensive relationships → recalculate → approve</text>
+ <path d="M426 662V688" class="line"/>
+ <rect x="64" y="694" width="724" height="169" rx="16" class="card"/>
+ <text x="88" y="729" class="step">4  Run the reviewed job</text>
+ <rect x="88" y="747" width="193" height="40" rx="9" fill="#214c75"/><text x="184" y="774" text-anchor="middle" class="small">Quick: hard clashes</text>
+ <rect x="294" y="747" width="470" height="40" rx="9" fill="#214c75"/><text x="529" y="774" text-anchor="middle" class="small">Detailed: save hard → local clearance</text>
+ <text x="88" y="818" class="muted">Advanced: broad clearance, explicit link pairs or insulation</text>
+ <text x="88" y="844" class="small">Progress and cancellation · each completed pass is saved</text>
+ <path d="M426 863V889" class="line"/>
+ <rect x="64" y="895" width="724" height="102" rx="16" fill="#203d62" stroke="#5a90c0"/>
+ <text x="88" y="930" class="step">5  Dashboard: inspect, coordinate and track</text>
+ <text x="88" y="963" class="muted">2D/3D · owners + due dates · groups · history · analytics</text>
+ <text x="88" y="987" class="small">Choose current/saved scope → BCF / Excel / Word</text>
+ <rect x="878" y="287" width="498" height="136" rx="16" class="green"/>
+ <text x="902" y="325" class="step">Choose Live / Trigger / Off</text>
+ <text x="902" y="360" class="muted">Live: automatic local feedback</text>
+ <text x="902" y="391" class="muted">Trigger: edits wait for Check Changes</text>
+ <path d="M1127 423V455" class="line"/>
+ <rect x="878" y="461" width="498" height="113" rx="16" class="green"/>
+ <text x="902" y="498" class="step">Place or edit host elements</text>
+ <text x="902" y="532" class="muted">Checks nearby host + configured links</text>
+ <text x="902" y="558" class="small">Session and freshness guards retain local work.</text>
+ <path d="M1127 574V606" class="line"/>
+ <rect x="878" y="612" width="498" height="116" rx="16" class="green"/>
+ <text x="902" y="650" class="step">Clash Radar: local findings</text>
+ <text x="902" y="685" class="muted">Inspect · navigate · diagnose · CSV</text>
+ <text x="902" y="710" class="small">This stream does not update Dashboard.</text>
+ <path d="M1127 728V770" class="line"/>
+ <rect x="878" y="776" width="498" height="110" rx="16" fill="#294443" stroke="#6bb2a5"/>
+ <text x="902" y="814" class="step">Fix in Revit → recheck</text>
+ <text x="902" y="848" class="muted">Local feedback while designing;</text>
+ <text x="902" y="874" class="small">Full Scan again for current coordination results.</text>
+ <path d="M1127 886V948H805V608H790" class="line"/>
+ <rect x="64" y="1030" width="1312" height="82" rx="16" fill="#392f21" stroke="#8e7951"/>
+ <text x="88" y="1065" font-size="20" font-weight="600" fill="#f5d998">Bounding boxes find candidates. Native solid overlap confirms hard clashes.</text>
+ <text x="88" y="1093" class="small">Unverified stays unverified. Untested scope stays unevaluated. Estimates and ETA are planning aids.</text>
+</svg>

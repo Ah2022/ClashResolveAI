@@ -93,6 +93,8 @@ namespace BIMEngine.Core.Spatial
         }
 
         public int CountEntries() => _root.CountEntries();
+        // Streaming variant for bounded metadata estimates; existing scan queries retain their behavior.
+        public IEnumerable<SpatialEntry> Enumerate(AABB region) => _root.Enumerate(region);
     }
 
     internal class OctreeNode
@@ -107,6 +109,13 @@ namespace BIMEngine.Core.Spatial
             _bounds = bounds;
             _depth = depth;
             _entries = new List<SpatialEntry>();
+        }
+
+        public IEnumerable<SpatialEntry> Enumerate(AABB region)
+        {
+            if(!_bounds.Intersects(region))yield break;
+            if(_entries!=null)foreach(var entry in _entries)if(entry.Bounds.Intersects(region))yield return entry;
+            if(_children!=null)foreach(var child in _children)foreach(var entry in child.Enumerate(region))yield return entry;
         }
 
         public void Insert(SpatialEntry entry, int maxObjectsPerNode, int maxDepth, double looseFactor)

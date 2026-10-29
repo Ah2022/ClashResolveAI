@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net48</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable><LangVersion>latest</LangVersion></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Core/Diagnostics.cs" Link="Diagnostics.cs" />
+    <Compile Include="../../src/LiveMonitor/LiveDiagnostics.cs" Link="LiveDiagnostics.cs" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Compile Include="../RevitStubs.cs" Link="RevitStubs.cs" />
+    <Compile Include="../../src/Core/Models.cs" Link="Models.cs" />
+    <Compile Include="../../src/Core/ClashIdentity.cs" Link="ClashIdentity.cs" />
+    <Compile Include="../../src/Core/ResultLifecycle.cs" Link="ResultLifecycle.cs" />
+    <Compile Include="../../src/LiveMonitor/MonitorMode.cs" Link="MonitorMode.cs" />
+    <Compile Include="../../src/LiveMonitor/ChangeAccumulator.cs" Link="ChangeAccumulator.cs" />
+    <Compile Include="../../src/LiveMonitor/LiveClashDto.cs" Link="LiveClashDto.cs" />
+    <Compile Include="../../src/LiveMonitor/RadarDataStore.cs" Link="RadarDataStore.cs" />
+    <Compile Include="../../src/LiveMonitor/ClashRadarViewModel.cs" Link="ClashRadarViewModel.cs" />
+    <Compile Include="../../src/LiveMonitor/ClashRadarPanel.cs" Link="ClashRadarPanel.cs" />
+    <Compile Include="../../src/LiveMonitor/ClashRadarInspector.cs" Link="ClashRadarInspector.cs" />
+    <Compile Include="../../src/Inspection/InspectionScene.cs" Link="InspectionScene.cs" />
+    <Compile Include="../../src/Inspection/InspectionViewport.cs" Link="InspectionViewport.cs" />
+    <Compile Include="../../src/Inspection/ClashInspector.cs" Link="ClashInspector.cs" />
+    <Compile Include="../../src/Inspection/InspectorPreferences.cs" Link="InspectorPreferences.cs" />
+  </ItemGroup>
+</Project>

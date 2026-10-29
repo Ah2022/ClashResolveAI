@@ -19,6 +19,9 @@ namespace ClashResolveAI
         public bool   AutoSectionBox    { get; set; } = true;
         public bool   ShowToast         { get; set; } = true;
         public bool   ScanLinkedModels  { get; set; } = true;
+        public int ScanConfigurationVersion { get; set; }
+        public bool ScanHostToHost { get; set; } = true;
+        public bool ScanHostToLinks { get; set; } = true;
 
         public string RuleSetName { get; set; } = "DefaultRules";
         public double MinimumOverlapMM3 { get; set; } = 1.0;
@@ -27,14 +30,27 @@ namespace ClashResolveAI
         [JsonIgnore] public ScanMode EffectiveMode { get; set; } = ScanMode.HardOnly;
         public int FullScanSliceMilliseconds { get; set; } = 40;
         public int LiveSliceMilliseconds { get; set; } = 25;
-        public int LiveDebounceMilliseconds { get; set; } = 350;
+        public int LiveDebounceMilliseconds { get; set; } = 500;
+        public int LiveMaximumSliceMilliseconds { get; set; } = 100;
         public bool ScanWithinLinks { get; set; } = true;
+        public bool FullScanWithinLinks { get; set; } = false;
+        public bool FullScanLinkedModels { get; set; } = true;
+        public string FullScanRuleSetName { get; set; } = "";
+        public double FullScanMinimumOverlapMM3 { get; set; } = 1;
+        public double FullScanInsulationMM { get; set; } = 50;
+        public double FullScanMaintenanceMM { get; set; } = 100;
+        public bool FullScanIncludeStructural { get; set; } = true;
+        public bool FullScanExcludeConnectedJoints { get; set; } = true;
         public bool IncludeLinkToLink { get; set; } = false;
         public bool TrackEditedElements { get; set; } = true;
         public bool ExcludeConnectedJoints { get; set; } = true;
+        // Legacy candidate preferences remain available to the Live Monitor pipeline.
         public bool ExcludeNamedSupports { get; set; } = false;
         public bool IncludeGenericModels { get; set; } = true;
         public bool IncludeInsulation { get; set; } = true;
+        public bool FullScanExcludeNamedSupports { get; set; } = true;
+        public bool FullScanIncludeGenericModels { get; set; } = false;
+        public bool FullScanIncludeInsulation { get; set; } = false;
         private static AppSettings? _cached;
         private static DateTime _stamp;
         private static string UserSettingsPath =>
@@ -43,6 +59,29 @@ namespace ClashResolveAI
             Path.Combine(Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_DIR")!,"Settings.json");
 
         public AppSettings ScanSnapshot() => (AppSettings)MemberwiseClone();
+        public AppSettings FullScanSnapshot()
+        {
+            var copy=ScanSnapshot();
+            copy.RuleSetName=string.IsNullOrWhiteSpace(FullScanRuleSetName)?RuleSetName:FullScanRuleSetName;
+            copy.MinimumOverlapMM3=FullScanMinimumOverlapMM3;copy.InsulationMM=FullScanInsulationMM;copy.MaintenanceMM=FullScanMaintenanceMM;
+            copy.IncludeStructural=FullScanIncludeStructural;copy.ExcludeConnectedJoints=FullScanExcludeConnectedJoints;
+            return copy;
+        }
+        // One-time, in-memory migration. Persist only when the user saves settings.
+        public void MigrateScanConfiguration()
+        {
+            if(ScanConfigurationVersion<1) {
+                ScanHostToHost=true;ScanHostToLinks=true;IncludeLinkToLink=false;
+                FullScanExcludeNamedSupports=true;FullScanIncludeGenericModels=false;FullScanIncludeInsulation=false;
+            }
+            if(ScanConfigurationVersion<2) {
+                FullScanWithinLinks=false;FullScanLinkedModels=ScanLinkedModels;
+                if(string.IsNullOrWhiteSpace(FullScanRuleSetName))FullScanRuleSetName=RuleSetName;
+                FullScanMinimumOverlapMM3=MinimumOverlapMM3;FullScanInsulationMM=InsulationMM;FullScanMaintenanceMM=MaintenanceMM;
+                FullScanIncludeStructural=IncludeStructural;FullScanExcludeConnectedJoints=ExcludeConnectedJoints;
+            }
+            ScanConfigurationVersion=2;
+        }
         public static AppSettings Load()
         {
             try {
@@ -50,13 +89,15 @@ namespace ClashResolveAI
                 var stamp = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
                 if (_cached != null && stamp == _stamp) return _cached;
                 _stamp = stamp;
-                return _cached = stamp == DateTime.MinValue ? new AppSettings() : JsonConvert.DeserializeObject<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+                _cached = stamp == DateTime.MinValue ? new AppSettings() : JsonConvert.DeserializeObject<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+                _cached.MigrateScanConfiguration();
+                return _cached;
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine(string.Concat("[ClashResolve] Settings load error: ", ex.Message)); }
             return new AppSettings();
         }
 
-        public static void Save(AppSettings s) { _cached = null; Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonConvert.SerializeObject(s, Formatting.Indented)); }
+        public static void Save(AppSettings s) { s.ScanConfigurationVersion=2; _cached = null; Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonConvert.SerializeObject(s, Formatting.Indented)); }
 
         private static string DefaultOut() =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "ClashResolve_Reports");

@@ -106,6 +106,7 @@ namespace ClashResolveAI.Core
 
         private static readonly string ConfigPath =
             Path.Combine(ConfigDir, "SystemKeywords.json");
+        public static string ConfigurationPath=>ConfigPath;
 
         public static SystemKeywordConfig Load()
         {

@@ -52,6 +52,25 @@ namespace ClashResolveAI.Core
             if(DateTime.UtcNow<_next)return;
             try
             {
+                if(_step>=1800&&Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_SCANRELEASE")=="1"){ScanReleaseStep(app);return;}
+                if(_step==0&&Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_SCANRELEASE")=="1") {
+                    _step=-99;VerifyScanPlanningNative(app);VerifyScanFilteringNative(app);VerifyScanProfilesNative(app);PrepareScanRelease(app);return;
+                }
+                if(_step==0&&Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_SCANESTIMATE")=="1") {
+                    _step=-99;VerifyScanPlanningNative(app);VerifyScanFilteringNative(app);VerifyScanProfilesNative(app);_timer?.Stop();
+                    File.WriteAllText(Path.Combine(_folder,"complete.txt"),"PASS "+Results.Count+" scan estimate/profile native checks.");return;
+                }
+                if(_step==0&&Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_SCANFILTER")=="1") {
+                    _step=-99;VerifyScanPlanningNative(app);VerifyScanFilteringNative(app);_timer?.Stop();
+                    File.WriteAllText(Path.Combine(_folder,"complete.txt"),"PASS "+Results.Count+" scan filtering/classification review native checks.");return;
+                }
+                if(_step==0 && Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_SCANPLAN")=="1") {
+                    _step=-99; VerifyScanPlanningNative(app); _timer?.Stop();
+                    File.WriteAllText(Path.Combine(_folder,"complete.txt"),"PASS "+Results.Count+" scan planning/classification native checks.");return;
+                }
+                if(Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_DASHBOARD")=="1"){DashboardReleaseStep(app);return;}
+                if(_step>=700){ReleaseStep(app);return;}
+                if(_step==0&&Environment.GetEnvironmentVariable("CLASHRESOLVE_VERIFY_RELEASE")=="1"){_step=700;ReleaseStep(app);return;}
                 if(_step>=500){Phase5Step(app);return;}
                 if(_step>=400){LedgerStep(app);return;}
                 if (_step == 0)
@@ -77,26 +96,35 @@ namespace ClashResolveAI.Core
                     Check(File.Exists(snapshots.Path3D) && File.Exists(snapshots.Path2D), "2D and 3D snapshots exported");
                     LiveMonitorService.Instance.Start(app);
                     RadarDataStore.Instance.Clear();
-                    // Keep a full job active across callbacks: the monitor must
-                    // still service selection before global work completes.
+                    // Live work must pause while Full Scan owns API time, preserving selection changes.
                     IEnumerable<int> LongScan(){while(true)yield return 0;}
                     ScanCoordinator.StartJob(_test!,new ClashEngine.ScanJob(LongScan(),new List<ClashResult>(),new ClashEngine.ScanStatistics()),(_,__)=>{});
                     app.ActiveUIDocument.Selection.SetElementIds(new[] { _moving! });
                     LiveMonitorService.Instance.CheckCurrentSelection();
-                    _step = 1; _next = DateTime.UtcNow.AddSeconds(3);
+                    _step = 11; _next = DateTime.UtcNow.AddSeconds(3);
+                }
+                else if(_step==11)
+                {
+                    Check(ScanCoordinator.Busy&&RadarDataStore.Instance.ActiveCount==0,"Live work pauses while Full Scan owns API time");
+                    ScanCoordinator.Cancel("Verification interrupted Full Scan");
+                    ScanCoordinator.Start(_test!,"",null,(rows,stats)=>Dashboard.ClashDashboard.Instance.MergeFullScan(rows,stats.Mode,stats.Scope));
+                    _step=12;_next=DateTime.UtcNow.AddSeconds(3);
+                }
+                else if(_step==12)
+                {
+                    if(ScanCoordinator.Busy){_next=DateTime.UtcNow.AddSeconds(1);return;}
+                    _step=1;_next=DateTime.UtcNow.AddSeconds(3);
                 }
                 else if (_step == 1)
                 {
                     Check(RadarDataStore.Instance.ActiveCount >= 3, "Live selection detects host plus repeated linked instances");
-                    Check(ScanCoordinator.Busy,"Live selection publishes while a full scan is still running");
-                    ScanCoordinator.Cancel("Verification background scan finished.");
+                    Check(!ScanCoordinator.Busy,"Live work resumes only after Full Scan completes");
                     var inspected=RadarDataStore.Instance.GetActive().First();
-                    var scene=Inspection.InspectionGeometry.Build(_test!,inspected,20);
+                    var scene=Inspection.InspectionGeometry.Build(_test!,LiveClashResolver.Resolve(_test!,inspected),20);
                     Check(scene.Meshes.Any(m=>m.Role==0)&&scene.Meshes.Any(m=>m.Role==1)&&scene.HasOverlap,"Interactive inspection extracts both elements and the real overlap mesh");
                     ClashRadarPanel.Instance.VerifyInspectorLayout(inspected,scene,_folder);
                     Check(true,"Responsive grid, full-height inspector, 3-up floating view and redocking work");
-                    var pin=new Inspection.InspectionHandler { Pending=inspected,PinScene=scene,PinPreferences=new Inspection.InspectorPreferences {Context=false} };
-                    pin.Execute(app);
+                    Inspection.InspectionHandler.Run(app,LiveClashResolver.Resolve(_test!,inspected),scene,new Inspection.InspectorPreferences {Context=false});
                     Check(new FilteredElementCollector(_test!).OfClass(typeof(View3D)).Cast<View3D>().Any(v=>v.Name.StartsWith("Clash_"+inspected.ClashId+"_")),"Pin action creates a saved 3D inspection view");
                     using (var tx = new Transaction(_test!, "ClashResolve — Verification model move"))
                     { tx.Start(); ElementTransformUtils.MoveElement(_test!, _moving!, new XYZ(100, 0, 0)); tx.Commit(); }
@@ -136,7 +164,7 @@ namespace ClashResolveAI.Core
                 {
                     Check(RadarDataStore.Instance.ActiveCount==0,"Restarted monitor clears deleted placement without user input");
                     LiveMonitorService.Instance.Stop();
-                    new ClashRefreshHandler().Execute(app);
+                    LiveMonitorService.Instance.RequestScan(LiveScanAction.Ledger);LiveMonitorService.Instance.ExecuteQueued(app);
                     _step=5;_next=DateTime.UtcNow.AddSeconds(1);
                 }
                 else if(_step==5)
@@ -272,9 +300,9 @@ namespace ClashResolveAI.Core
             Check(full.Count >= 3 && full.Select(c => c.NormalizedKey).Distinct().Count() == full.Count, "Rotated and repeated linked model instances retain distinct identities");
             ClashDatabase.Instance.BulkInsertClashes(full);
             Check(ClashDatabase.Instance.GetClashCount() >= 3, "SQLite native dependency and persistence work");
-            var reasons=Enum.GetValues(typeof(UnverifiedReason)).Cast<UnverifiedReason>().Select((reason,i)=>new ClashResult {ClashId="REASON-"+i,TestType=ClashTestType.Unverified,UnverifiedReason=reason}).ToList();
-            ClashDatabase.Instance.BulkInsertClashes(reasons);
-            using(var connection=new System.Data.SQLite.SQLiteConnection("Data Source="+Path.Combine(_folder,"databases",DocumentSession.Key(doc)+".clash.db")+";Version=3;")){
+            var reasons=Enum.GetValues(typeof(UnverifiedReason)).Cast<UnverifiedReason>().Select((reason,i)=>new ClashResult {ClashId="REASON-"+i,HostDocumentKey="reason-fixture",ElementAId=80000000+i,ElementBId=81000000+i,ElementUniqueIdA="reason-a-"+i,ElementUniqueIdB="reason-b-"+i,TestType=ClashTestType.Unverified,UnverifiedReason=reason}).ToList();
+            using(var reasonDatabase=new ClashDatabase()){reasonDatabase.Open("reason-fixture");reasonDatabase.BulkInsertClashes(reasons);}
+            using(var connection=new System.Data.SQLite.SQLiteConnection("Data Source="+Path.Combine(_folder,"databases","reason-fixture.clash.db")+";Version=3;")){
                 connection.Open();using var command=connection.CreateCommand();command.CommandText="SELECT ClashId,UnverifiedReason FROM Clashes WHERE ClashId LIKE 'REASON-%'";
                 using var reader=command.ExecuteReader();int matched=0;
                 while(reader.Read())if(reasons.Any(c=>c.ClashId==reader.GetString(0)&&c.UnverifiedReason.ToString()==reader.GetString(1)))matched++;

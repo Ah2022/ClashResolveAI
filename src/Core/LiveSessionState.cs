@@ -43,24 +43,26 @@ namespace ClashResolveAI.Core
             public readonly Dictionary<long,long> Elements=new Dictionary<long,long>();
             public readonly HashSet<long> Dirty=new HashSet<long>();
             public readonly HashSet<long> FullDirty=new HashSet<long>();
-            public long Inputs,VerifiedInputs;
+            public long Inputs,VerifiedInputs,Revision;
         }
         private readonly Dictionary<string,State> _documents=new Dictionary<string,State>();
         public long Revision {get;private set;}
         private State Get(string document){if(!_documents.TryGetValue(document,out var state))_documents[document]=state=new State();return state;}
         public void Changed(string document,IEnumerable<long> ids,bool inputs)
         {
-            var state=Get(document);long revision=++Revision;
+            var state=Get(document);long revision=++Revision;state.Revision=revision;
             foreach(long id in ids){state.Elements[id]=revision;state.Dirty.Add(id);state.FullDirty.Add(id);}
             if(inputs)state.Inputs=revision;
         }
-        public long Required(ClashResult clash)
-        {
-            var state=Get(clash.HostDocumentKey);long revision=state.Inputs;
-            if(string.IsNullOrEmpty(clash.LinkInstanceA)&&state.Elements.TryGetValue(clash.ElementAId,out var a))revision=Math.Max(revision,a);
-            if(string.IsNullOrEmpty(clash.LinkInstanceB)&&state.Elements.TryGetValue(clash.ElementBId,out var b))revision=Math.Max(revision,b);
+        public long DocumentRevision(string key)=>Get(key).Revision;
+        public long InputRevision(string key)=>Get(key).Inputs;
+        public long Required(string key,long idA,string linkA,long idB,string linkB) {
+            var state=Get(key);long revision=state.Inputs;
+            if(linkA==""&&state.Elements.TryGetValue(idA,out var a))revision=Math.Max(revision,a);
+            if(linkB==""&&state.Elements.TryGetValue(idB,out var b))revision=Math.Max(revision,b);
             return revision;
         }
+        public long Required(ClashResult clash)=>Required(clash.HostDocumentKey,clash.ElementAId,clash.LinkInstanceA,clash.ElementBId,clash.LinkInstanceB);
         public bool IsStale(ClashResult clash)=>Required(clash)>clash.GeometryRevision;
         public bool IsDirty(string document)=>Get(document).Dirty.Count>0||Get(document).Inputs>Get(document).VerifiedInputs;
         public bool InputsStale(string document)=>Get(document).Inputs>Get(document).VerifiedInputs;

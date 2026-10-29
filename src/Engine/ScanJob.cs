@@ -8,12 +8,27 @@ namespace ClashResolveAI.ClashEngine
     public sealed class ScanStatistics
     {
         public string Phase = "Preparing";
+        public string CurrentRelationship="Preparing models",CurrentFloor="Pending source collection",WorkflowId="",StageLabel="Scan";
+        public int WorkflowStage=1,WorkflowStageCount=1,RelationshipCompletedSources,RelationshipTotalSources,ExcludedByArea;
+        public string EstimatedRemaining=>Phase=="Complete"?"Complete":WallMilliseconds<5000||CompletedSources<10||TotalSources<=CompletedSources?"Calculating…":
+            $"about {Math.Max(1,(WallMilliseconds/1000.0/CompletedSources*(TotalSources-CompletedSources))/60):N0} min (source-rate estimate)";
+        public string CoordinatorSummary=>$"Stage {WorkflowStage}/{WorkflowStageCount}: {StageLabel}\nPhase: {CurrentRelationship} — {Phase}\nCurrent floor: {CurrentFloor}\nSource elements: {CompletedSources:N0} / {TotalSources:N0} (relationship {RelationshipCompletedSources:N0} / {RelationshipTotalSources:N0})\nBounding-box candidates: {Candidates:N0}\nGeometry tests: {Tested:N0}\nBoolean tests: {BooleanTests:N0}\nExcluded before indexing: {ExcludedBeforeIndex:N0}; excluded by rule: {ExcludedRelationshipsBeforeSpatial:N0}; outside confirmed areas: {ExcludedByArea:N0}\nUnclassified: {UnclassifiedElements:N0}\nEstimated remaining: {EstimatedRemaining}\nElapsed: {WallMilliseconds/1000.0:N0} s · API work: {WorkMilliseconds:N0} ms";
+        public string ScanId = "";
+        public int ScanSequenceNumber=0;
+        public string ScanCaptureJson = "";
+        public string ScanPlanJson = "";
+        public int ClassifiedElements, UnclassifiedElements, ExcludedBeforeIndex;
+        public bool CoversWholeHostScope;
+        public long SpatialQueries, PartitionRuleChecks, RejectedPartitionChecks, ExcludedRelationshipsBeforeSpatial;
+        public int ExcludedByScopeBeforeIndex;
+        public string ProjectMappingsFingerprint="";
         public ScanMode Mode;
         public bool IncludeLinkToLink, NativeLinkQueries;
         public ScanScope Scope=new ScanScope();
         public int BelowTolerance, SkippedClearance;
         public int IndexedElements, TotalSources, CompletedSources, GeometryCacheHits, GeometryLoads;
         public long WallMilliseconds;
+        public DateTime? ScanStartedUtc,FirstResultUtc,ScanCompletedUtc;
         public double ProgressPercent => Phase=="Complete"?100:TotalSources==0?0:Math.Min(99,15+85.0*CompletedSources/TotalSources);
         public int Sources, Candidates, Tested, Excluded, MissingGeometry, BooleanFailures, Unverified;
         public long WorkMilliseconds;
@@ -46,6 +61,7 @@ namespace ClashResolveAI.ClashEngine
         private bool _disposed;
         public readonly List<ClashResult> Results;
         public readonly ScanStatistics Statistics;
+        public double LastSliceMilliseconds { get; private set; }
         public bool Complete { get; private set; }
         public bool Cancelled { get; private set; }
         internal ScanJob(IEnumerable<int> work, List<ClashResult> results, ScanStatistics stats, Action? cleanup=null)
@@ -53,11 +69,13 @@ namespace ClashResolveAI.ClashEngine
         public bool Advance(int milliseconds)
         {
             if (Complete || Cancelled) return true;
+            Statistics.ScanStartedUtc=Statistics.ScanStartedUtc??DateTime.UtcNow;
             var timer = Stopwatch.StartNew();
             try {
-                do { if (!_work.MoveNext()) { Complete = true; Statistics.Phase="Complete"; break; } }
+                do { bool next=_work.MoveNext();if(Statistics.FirstResultUtc==null&&Results.Count>0)Statistics.FirstResultUtc=DateTime.UtcNow;if (!next) { Complete = true; Statistics.Phase="Complete";Statistics.ScanCompletedUtc=DateTime.UtcNow; break; } }
                 while (timer.ElapsedMilliseconds < Math.Max(1, milliseconds));
             } finally {
+                LastSliceMilliseconds=timer.Elapsed.TotalMilliseconds;
                 Statistics.WallMilliseconds=_elapsed.ElapsedMilliseconds;
                 Statistics.SliceCount++;if(timer.Elapsed.TotalMilliseconds>50)Statistics.SlicesOver50ms++;
                 Statistics.WorkMilliseconds += timer.ElapsedMilliseconds;

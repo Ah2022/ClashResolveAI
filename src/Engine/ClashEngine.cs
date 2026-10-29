@@ -40,6 +40,8 @@ namespace ClashResolveAI.ClashEngine
             string volInfo = overlapVolMM3 > 0 ? $" | Vol:{overlapVolMM3:F1}mm³" : "";
 
             Discipline mover = PriorityMatrix.GetMovingDiscipline(dA, dB);
+            var classificationA=_classifier?.Get(elA);
+            var classificationB=_classifier?.Get(elB);
 
             return new ClashResult
             {
@@ -47,13 +49,13 @@ namespace ClashResolveAI.ClashEngine
                 ElementB          = elB,
                 DisciplineA       = dA,
                 DisciplineB       = dB,
-                SystemTypeA       = GetSystemType(elA),
-                SystemTypeB       = GetSystemType(elB),
+                SystemTypeA       = classificationA?.SystemType ?? GetSystemType(elA),
+                SystemTypeB       = classificationB?.SystemType ?? GetSystemType(elB),
                 // FIX E: populate category/family fields for dashboard filtering
                 CategoryNameA     = ElementCollector.GetCategoryName(elA),
                 CategoryNameB     = ElementCollector.GetCategoryName(elB),
-                FamilyTypeA       = ElementCollector.GetFamilyTypeName(elA),
-                FamilyTypeB       = ElementCollector.GetFamilyTypeName(elB),
+                FamilyTypeA       = classificationA?.FamilyType ?? ElementCollector.GetFamilyTypeName(elA),
+                FamilyTypeB       = classificationB?.FamilyType ?? ElementCollector.GetFamilyTypeName(elB),
                 StructuralSubTypeA = dA == Discipline.Structural ? ElementCollector.GetStructuralSubType(elA) : "",
                 StructuralSubTypeB = dB == Discipline.Structural ? ElementCollector.GetStructuralSubType(elB) : "",
                 ClashType         = ruleKey,

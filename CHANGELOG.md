@@ -2,6 +2,29 @@
 
 This is the single release history for the cleaned repository. Earlier notes are summarized here rather than retained as separate versioned source trees or change documents.
 
+## 9.4 coordination source update — 2026-10-29
+
+- Full Scan profiles: Quick, Detailed and Advanced with a reviewed estimate required before Start.
+- Immutable plans, cached explicit classification, project mapping review, candidate exclusions and compiled discipline/category filtering before spatial queries.
+- Bounded workload estimates, historical timing ranges or an explicit unavailable result, and removal of expensive model relationships.
+- Detailed saves its hard-clash pass before localized selected-rule clearance. Link-to-link and insulation remain explicit separate jobs. Cancellation preserves completed stages.
+- Coordinator progress exposes relationships, floors, sources, candidate/geometry/Boolean counts, exclusions, unknowns and a source-rate ETA.
+- Area-aware coverage retains untested clearance findings and prevents partial scope from certifying whole-host freshness. Saved history chooses a comparable configuration baseline across staged jobs.
+- Full Scan settings and link display records remain separate from Live preferences and the shared Live link cache.
+- Added native staged/cancellation fixtures, loaded-link benchmarks, reproducible release checks and a portable package script.
+- Expanded README with a sourced Navisworks Manage comparison and an editable visual workflow/usage guide. Production acceptance and native check status are documented separately in `docs/FULL_SCAN_PHASE7_8.md`.
+
+## 9.4.0 Live Monitor upgrade — 2026-10-06
+
+- Fixed local scan starvation when input fingerprint validation exceeded the preferred slice target. Environment checks are polled, while completed results receive fresh validation after DTO capture. The hard responsiveness limit remains enforced.
+
+- Document and session generation guard every queued live operation; one Revit gateway owns execution and coalesces requests.
+- ChangeAccumulator and LiveScanScheduler preserve changes across cancellation and Full Scan, debounce local work, and pause after excessive API slice duration.
+- Radar stores immutable DTOs. Navigation and inspection resolve current UniqueIds, geometry revisions and link environments inside Revit handlers.
+- Registered dockable Radar uses commands and explicit Live, Trigger and Off modes, scan status and queue indicators.
+- Correlated timestamps and scan counters appear in Radar diagnostics and bounded asynchronous JSONL logs. Diagnostic snapshots can be exported.
+- Clean version-checked deployment backs up owned files and verifies every installed DLL against the fresh build.
+
 ## 9.4.0 — 2026-10-01
 
 ### Detection and result lifecycle

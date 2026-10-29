@@ -7,16 +7,10 @@ using System.Linq;
 
 namespace ClashResolveAI.Inspection
 {
-    internal sealed class InspectionHandler : IExternalEventHandler
+    internal static class InspectionHandler
     {
-        public ClashResult? Pending;
-        public InspectionScene? PinScene;
-        public InspectorPreferences? PinPreferences;
-        public void Execute(UIApplication app)
+        internal static void Run(UIApplication app, ClashResult clash, InspectionScene? scene, InspectorPreferences? preferences, Action<InspectionScene?,string>? completed = null)
         {
-            var clash=Pending;var scene=PinScene;var preferences=PinPreferences;
-            Pending=null;PinScene=null;PinPreferences=null;
-            if(clash==null)return;
             try
             {
                 var doc=app.ActiveUIDocument?.Document;
@@ -38,14 +32,14 @@ namespace ClashResolveAI.Inspection
                 }
                 // Geometry is copied into plain coordinates; rendering never calls Revit.
                 var built=InspectionGeometry.Build(doc,clash,20);
-                if(ClashRadarPanel.IsVisible)ClashRadarPanel.Instance.AcceptInspection(clash,built,"");
+                completed?.Invoke(built,"");
             }
             catch(Exception ex)
             {
                 Diagnostics.Log("Inspection",ex);
-                if(ClashRadarPanel.IsVisible)ClashRadarPanel.Instance.AcceptInspection(clash,null,ex.Message);
+                completed?.Invoke(null,ex.Message);
             }
         }
-        public string GetName()=>"ClashResolve geometry inspection";
+
     }
 }

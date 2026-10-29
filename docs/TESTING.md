@@ -1,11 +1,18 @@
 # Testing
 
+## Coordination source update: Full Scan phases 1–8
+
+Run `./scripts/Test-Release.ps1` for the production build and all seven standalone harnesses. Add `-Native` to run the disposable Revit Phase78 suite. Use `./scripts/Package-Release.ps1 -BuildOutput ./artifacts/fullscan-phase78` to create a local deployable ZIP with SHA256 inventory. See [the Phase 7–8 report](FULL_SCAN_PHASE7_8.md) for the current results and production release gates. Native fixtures do not establish representative loaded-production performance.
+
 Run commands from the repository root in PowerShell. Local outputs go under ignored `artifacts` or `verification` folders. Do not commit customer models or scan evidence.
 
 ## Standalone checks
 
 ```powershell
 dotnet run --project tests/IdentityTests.csproj -c Release
+dotnet run --project tests/LiveMonitorHarness/LiveMonitorHarness.csproj -c Release
+dotnet run --project tests/LiveGatewayHarness/LiveGatewayHarness.csproj -c Release
+dotnet run --project tests/RadarUiHarness/RadarUiHarness.csproj -c Release
 .\tests\Test-ScanBaselineComparator.ps1
 .\tests\Test-HardOnlyComparator.ps1
 dotnet run --project tests/InspectorHarness/InspectorHarness.csproj -c Release -- artifacts/inspector
@@ -20,6 +27,8 @@ Validate an exported BCF archive with:
 ```
 
 ## Revit integration and production-copy comparison
+
+For the installed Live Monitor 9.4 build, close Revit and run `./tests/Run-LiveReleaseVerification.ps1`. Approve the unsigned add-in prompt if you trust the build. This creates synthetic host and linked models in a new ignored verification folder. Wait for `complete.txt`; any `failed.txt` is a failure. Tests cover modes, placement, movement, deletion, dockable pane, navigation/inspection, stale rejection, Full Scan handoff and diagnostics. Actual UI Undo/Redo and large-model performance remain separate acceptance checks; they must not be inferred from these synthetic checks.
 
 Build and install the add-in first. Put an authorized, disposable model copy under `verification\production`. Never point the harness at an original project. The harness rejects production model paths outside this directory.
 

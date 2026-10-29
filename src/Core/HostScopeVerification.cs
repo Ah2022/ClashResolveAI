@@ -35,7 +35,7 @@ namespace ClashResolveAI.Core
                 var copy=persisted.ScanSnapshot();dialog.Options.Apply(copy,false);
                 Check(copy.FullScanMode==ScanMode.HardAndClearance&&copy.IncludeLinkToLink&&copy.LiveMode==persisted.LiveMode,"Pre-scan choices persist without changing Live Monitor mode");
                 CaptureLifecycleUi(dialog,"phase3-scan-options.png");dialog.Close();
-                var disabled=new ScanOptionsPanel(new AppSettings {ScanLinkedModels=false,IncludeLinkToLink=true},false);
+                var disabled=new ScanOptionsPanel(new AppSettings {FullScanLinkedModels=false,IncludeLinkToLink=true},false);
                 Check(!disabled.IncludeLinkToLink&&!disabled.LinkToLink.IsEnabled,"Link-to-link cannot run when linked-model scanning is disabled");
 
                 string path=Path.Combine(_folder,"phase3-link.rvt");
@@ -56,7 +56,7 @@ namespace ClashResolveAI.Core
                     DocumentSession.Activate(doc);
                     using(var defaultJob=new ClashResolveAI.ClashEngine.ClashEngine(doc).CreateJob(null,true)){
                         while(!defaultJob.Advance(25)){}
-                        Check(defaultJob.Statistics.TotalSources==1&&!defaultJob.Statistics.IncludeLinkToLink,"Unspecified job scope uses the persisted host-centric setting");
+                        Check(defaultJob.Statistics.TotalSources==3&&!defaultJob.Statistics.IncludeLinkToLink,"Unspecified job scope visits one host source across three explicit host relationships");
                     }
                     VerifyHostScopeExperiment(doc,_folder,"phase3-fixture",true);
                 }finally {doc.Close(false);}
@@ -77,7 +77,12 @@ namespace ClashResolveAI.Core
                     using var process=Process.GetCurrentProcess();process.Refresh();
                     long before=process.PrivateMemorySize64,peak=before;var timer=Stopwatch.StartNew();
                     var engine=new ClashResolveAI.ClashEngine.ClashEngine(doc);
-                    using var job=engine.CreateJob(null,true,mode:mode,includeLinkToLink:all,nativeLinkQueries:native);
+                    var configured=AppSettings.Load().ScanSnapshot();configured.FullScanWithinLinks=all;
+                    var loaded=new ClashResolveAI.Links.LinkedModelManager(doc).GetLoadedLinks();
+                    // This benchmark explicitly requests its complete comparison set. Production never generates it.
+                    var selectedPairs=loaded.SelectMany((left,index)=>loaded.Skip(index+1).Select(right=>new ScanModelPair(left.Instance.UniqueId,right.Instance.UniqueId))).ToArray();
+                    var plan=RevitScanPlanFactory.Create(doc,configured,loaded,true,mode:mode,linkToLink:all,pairs:all?selectedPairs:null);
+                    using var job=engine.CreatePlannedJob(plan,native);
                     while(!job.Advance(25)){process.Refresh();peak=Math.Max(peak,process.PrivateMemorySize64);}
                     timer.Stop();process.Refresh();peak=Math.Max(peak,process.PrivateMemorySize64);
                     var rows=job.Results;var stats=job.Statistics;
@@ -96,7 +101,7 @@ namespace ClashResolveAI.Core
                     }
                     measurements.Add(new {mode=mode.ToString(),method,wallSeconds=timer.Elapsed.TotalSeconds,privateBytesBefore=before,sampledPeakPrivateBytes=peak,privateBytesAfter=process.PrivateMemorySize64,statistics=stats,match,hard=rows.Count(c=>c.TestType==ClashTestType.HardClash),clearance=rows.Count(c=>c.TestType==ClashTestType.ClearanceClash),unverified=rows.Count(c=>c.TestType==ClashTestType.Unverified),hostResults=all?expected!.Count:rows.Count,results=rows.Select(c=>new {c.ClashId,c.LinkInstanceA,c.LinkInstanceB,c.TestType,c.UnverifiedReason})});
                 }
-                if(fixture){Check(hostSources==1&&allSources==5,"Host-centric source count reduces from five to one in "+mode);Check(true,"Host-centric octree and native queries match all host ClashIds and classifications in "+mode);}
+                if(fixture){Check(hostSources==3&&allSources==9,"Explicit host relationships reduce source visits from nine to three in "+mode);Check(true,"Host-centric octree and native queries match all host ClashIds and classifications in "+mode);}
             }
             File.WriteAllText(Path.Combine(folder,name+".json"),JsonConvert.SerializeObject(new {executed=true,fixture,loadedLinkInstances=links,memoryMethod="Process private bytes sampled between 25 ms API slices; includes Revit caches, not isolated index allocation.",measurements},Formatting.Indented));
         }

@@ -26,6 +26,7 @@ namespace ClashResolveAI
             {
                 // Capture the UI thread dispatcher (called on Revit's main thread at startup).
                 UIDispatcher = Dispatcher.CurrentDispatcher;
+                app.RegisterDockablePane(ClashRadarPanel.PaneId,"Clash Radar",ClashRadarPanel.Instance);
 
                 const string tab = "MEP AI Tools";
                 const string pan = "ClashResolve AI 9.4";
@@ -50,7 +51,7 @@ namespace ClashResolveAI
                 // Live Monitor / Clash Radar
                 var monData = Btn("LiveMonitor", "Live\nMonitor", dll,
                     "ClashResolveAI.Commands.LiveMonitorCommand",
-                    "▶ START real-time Clash Radar — toast notifications + ClashRadar panel with Show 2D/3D.",
+                    "Open dockable Clash Radar: Live checks automatically, Trigger checks on demand, Off disables live checking.",
                     "monitor_16.png", "monitor_32.png");
                 MonitorButton = rp.AddItem(monData) as PushButton;
                 rp.AddSeparator();
@@ -70,7 +71,8 @@ namespace ClashResolveAI
 
                 Diagnostics.Log("Startup "+Assembly.GetExecutingAssembly().FullName+" from "+dll);
                 app.ViewActivated+=(_,e)=>{try{if(e.CurrentActiveView?.Document!=null)DocumentSession.Activate(e.CurrentActiveView.Document);}catch(Exception ex){Diagnostics.Log("Activate project",ex);}};
-                app.ControlledApplication.DocumentClosing+=(_,e)=>DocumentSession.Close(e.Document);
+                // DocumentClosing can be cancelled; clean up only after native closure.
+                app.Idling+=(_,__)=>{try{DocumentSession.PruneClosedDocuments();}catch(Exception ex){Diagnostics.Log("Closed project cleanup",ex);}};
                 ScanCoordinator.Attach(app);
                 IntegrationVerification.Attach(app);
                 ProductionVerification.Attach(app);
@@ -87,6 +89,7 @@ namespace ClashResolveAI
         {
             ScanCoordinator.Shutdown();
             LiveMonitor.LiveMonitorService.Instance?.Stop();
+            ClashRadarPanel.Instance.Shutdown();
             ClashDatabase.Instance?.Dispose();
             return Result.Succeeded;
         }
@@ -96,13 +99,13 @@ namespace ClashResolveAI
             if (MonitorButton == null) return;
             if (MonitorActive)
             {
-                MonitorButton.ToolTip    = "⏹ Clash Radar ACTIVE — click to STOP.";
+                MonitorButton.ToolTip    = "Open Clash Radar · "+LiveMonitorService.Instance.Mode+" mode. Choose Off in the pane to disable live checking.";
                 MonitorButton.LargeImage = I("alert_32.png");
                 MonitorButton.Image      = I("alert_16.png");
             }
             else
             {
-                MonitorButton.ToolTip    = "▶ Click to START Clash Radar real-time monitoring.";
+                MonitorButton.ToolTip    = "Open Clash Radar. Start monitoring or choose Live / Trigger / Off in the pane.";
                 MonitorButton.LargeImage = I("monitor_32.png");
                 MonitorButton.Image      = I("monitor_16.png");
             }
